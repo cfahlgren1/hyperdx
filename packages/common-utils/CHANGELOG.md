@@ -1,5 +1,11 @@
 # @hyperdx/common-utils
 
+## 0.22.1
+
+### Patch Changes
+
+- 738199323: fix: Fix filter key fetching on version-mismatched distributed tables
+
 ## 0.22.0
 
 ### Minor Changes

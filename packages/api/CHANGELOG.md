@@ -1,5 +1,13 @@
 # @hyperdx/api
 
+## 2.31.0
+
+### Patch Changes
+
+- 758ab6381: Fix: Prevent grouped alerts from getting permanently stuck in the ALERT state by resetting history state to OK when thresholds are no longer exceeded.
+- Updated dependencies [738199323]
+  - @hyperdx/common-utils@0.22.1
+
 ## 2.30.1
 
 ## 2.30.0
