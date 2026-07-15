@@ -88,6 +88,35 @@ services:
     depends_on:
       - ch-server
       - db
+  agent:
+    profiles:
+      - agent
+    build:
+      context: .
+      dockerfile: docker/agent/Dockerfile
+    environment:
+      AI_MODEL_NAME: ${AI_MODEL_NAME:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      HYPERDX_MCP_URL: ${HYPERDX_MCP_URL:-http://app:${HYPERDX_API_PORT}/mcp}
+      HYPERDX_MCP_ACCESS_KEY: ${HYPERDX_MCP_ACCESS_KEY:-}
+      FLUE_DB_PATH: /data/flue.db
+      PORT: '4010'
+    ports:
+      - '127.0.0.1:${HYPERDX_AGENT_PORT:-4010}:4010'
+    volumes:
+      - agent_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: on-failure
+    networks:
+      - agent
+      - internal
   ch-server:
     image: clickhouse/clickhouse-server:26.5-alpine
     # WARNING: Exposing the database port will make it accessible from outside the container,
@@ -109,3 +138,6 @@ services:
       - internal
 networks:
   internal:
+  agent:
+volumes:
+  agent_data:
