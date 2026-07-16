@@ -12,9 +12,9 @@ ANTHROPIC_API_KEY="..." AGENT_INVESTIGATIONS_ENABLED=true \
   docker compose --profile agent up -d
 ```
 
-Once an account is registered in the app, the agent provisions its own
-read-only ClickStack credential and starts investigating fresh alert fires.
-Override the model with `AI_MODEL_NAME` (default `claude-sonnet-5`), or point
+Once an account is registered in the app, the agent provisions its own read-only
+ClickStack credential and starts investigating fresh alert fires. Override the
+model with `AI_MODEL_NAME` (default `claude-sonnet-5`), or point
 `ANTHROPIC_BASE_URL` at any Anthropic-compatible endpoint.
 
 ## How investigations behave
@@ -35,11 +35,11 @@ Assumes the single-team model of self-hosted ClickStack.
 
 Set on the `app` service:
 
-| Variable | Default | |
-| --- | --- | --- |
-| `AGENT_INVESTIGATIONS_ENABLED` | `false` | master switch |
-| `AGENT_WORKFLOW_URL` | `http://agent:4010/workflows/investigateAlert` | dispatch target |
-| `AGENT_CREDENTIAL_PORT` | `8001` | internal credential/write-back listener — never publish it |
+| Variable                       | Default                                        |                                                            |
+| ------------------------------ | ---------------------------------------------- | ---------------------------------------------------------- |
+| `AGENT_INVESTIGATIONS_ENABLED` | `false`                                        | master switch                                              |
+| `AGENT_WORKFLOW_URL`           | `http://agent:4010/workflows/investigateAlert` | dispatch target                                            |
+| `AGENT_CREDENTIAL_PORT`        | `8001`                                         | internal credential/write-back listener — never publish it |
 
 ## Local development
 
@@ -47,13 +47,16 @@ Set on the `app` service:
 yarn workspace @hyperdx/agent dev
 ```
 
-Run the API with `AGENT_CREDENTIAL_ENDPOINT_ENABLED=true`, or set
-`HYPERDX_MCP_ACCESS_KEY` to a personal API key. Trigger an investigation:
+Run the API with `AGENT_INVESTIGATIONS_ENABLED=true`. To trigger an
+investigation manually, authenticate with the agent's provisioned credential
+(the same one the agent fetches at startup):
 
 ```bash
+CRED=$(curl -s -H 'x-hyperdx-agent-provision: 1' \
+  http://127.0.0.1:8001/agent/credential | jq -r .credential)
 curl -X POST 'http://127.0.0.1:4010/workflows/investigateAlert?wait=result' \
   -H 'content-type: application/json' \
-  -H "authorization: Bearer $HYPERDX_MCP_ACCESS_KEY" \
+  -H "authorization: Bearer $CRED" \
   -d '{"alertHistoryId":"<id>","alertId":"<id>"}'
 ```
 

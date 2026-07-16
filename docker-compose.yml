@@ -53,9 +53,9 @@ services:
       - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
       - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
     environment:
-      AGENT_CREDENTIAL_ENDPOINT_ENABLED: 'true'
       # Enable alert-triggered agent investigations. Turn on together with the
-      # `agent` profile; when off, no investigations are dispatched.
+      # `agent` profile; when off, no investigations are dispatched and the
+      # internal credential listener is not started.
       AGENT_INVESTIGATIONS_ENABLED: ${AGENT_INVESTIGATIONS_ENABLED:-false}
       AGENT_WORKFLOW_URL: ${AGENT_WORKFLOW_URL:-http://agent:4010/workflows/investigateAlert}
       FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
@@ -106,7 +106,6 @@ services:
       HYPERDX_AGENT_CREDENTIAL_URL: ${HYPERDX_AGENT_CREDENTIAL_URL:-http://app:8001/agent/credential}
       HYPERDX_INVESTIGATION_WRITEBACK_URL: ${HYPERDX_INVESTIGATION_WRITEBACK_URL:-http://app:8001/agent/investigations}
       HYPERDX_MCP_URL: ${HYPERDX_MCP_URL:-http://app:${HYPERDX_API_PORT}/mcp}
-      HYPERDX_MCP_ACCESS_KEY: ${HYPERDX_MCP_ACCESS_KEY:-}
       FLUE_DB_PATH: /data/flue.db
       PORT: '4010'
     ports:

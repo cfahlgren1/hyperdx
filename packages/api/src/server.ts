@@ -68,7 +68,7 @@ export default class Server {
       );
     });
 
-    if (config.AGENT_CREDENTIAL_ENDPOINT_ENABLED) {
+    if (config.AGENT_INVESTIGATIONS_ENABLED) {
       // Internal-only: this port must not be published outside the trusted
       // network. The Compose file enables the flag without mapping the port.
       http

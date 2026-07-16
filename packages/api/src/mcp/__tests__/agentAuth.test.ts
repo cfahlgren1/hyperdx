@@ -208,7 +208,7 @@ describe('agent credential auth', () => {
         .expect(409);
     });
 
-    it('accepts a personal access key (HYPERDX_MCP_ACCESS_KEY override)', async () => {
+    it('rejects a personal access key: only the agent credential may write', async () => {
       const { team, user } = await getLoggedInAgent(server);
       const history = await createHistory(team._id);
 
@@ -220,10 +220,10 @@ describe('agent credential auth', () => {
           alertId: history.alert.toString(),
           summary: 'via access key',
         })
-        .expect(204);
+        .expect(401);
 
       const updated = await AlertHistory.findById(history._id);
-      expect(updated?.investigation?.summary).toBe('via access key');
+      expect(updated?.investigation?.summary).toBeUndefined();
     });
 
     it('rejects unsolicited summaries for histories never marked for investigation (409)', async () => {

@@ -16,7 +16,6 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconReportSearch } from '@tabler/icons-react';
 
-import api from '@/api';
 import { FormatTime } from '@/useFormatTime';
 
 function getAlertUrl(item: AlertInvestigationItem): string {
@@ -140,10 +139,15 @@ function InvestigationCard({ item }: { item: AlertInvestigationItem }) {
 // first. Backed by GET /alerts/investigations, which queries investigations
 // directly instead of the rolling per-alert history window, so summaries stay
 // reachable after they scroll out of the 20-entry chart history.
-export function InvestigationsFeed() {
-  const { data, isLoading, isError } = api.useAlertInvestigations();
-  const entries = data?.data ?? [];
-
+export function InvestigationsFeed({
+  entries,
+  isLoading,
+  isError,
+}: {
+  entries: AlertInvestigationItem[];
+  isLoading: boolean;
+  isError: boolean;
+}) {
   if (isLoading) {
     return (
       <Text size="sm" c="dimmed" ta="center" py={40}>

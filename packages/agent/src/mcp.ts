@@ -8,19 +8,14 @@ const CREDENTIAL_URL =
   'http://localhost:8001/agent/credential';
 const CREDENTIAL_FETCH_ATTEMPTS = 24;
 const CREDENTIAL_FETCH_DELAY_MS = 5_000;
+const CREDENTIAL_FETCH_TIMEOUT_MS = 5_000;
 
 /**
- * Resolve the MCP credential: an explicit env key wins, otherwise fetch the
- * agent credential ClickStack mints for this installation. The fetch retries
+ * Fetch the agent credential ClickStack mints for this installation. Retries
  * for ~2 minutes (the API may still be booting, or nobody has registered an
  * account yet) and then exits so the container's restart policy takes over.
  */
 async function resolveCredential(): Promise<string> {
-  const override = process.env.HYPERDX_MCP_ACCESS_KEY?.trim();
-  if (override) {
-    return override;
-  }
-
   for (let attempt = 1; attempt <= CREDENTIAL_FETCH_ATTEMPTS; attempt++) {
     const progress = `(attempt ${attempt}/${CREDENTIAL_FETCH_ATTEMPTS})`;
     try {
@@ -28,6 +23,9 @@ async function resolveCredential(): Promise<string> {
       // SSRF request; the API rejects provisioning calls that lack it.
       const response = await fetch(CREDENTIAL_URL, {
         headers: { 'x-hyperdx-agent-provision': '1' },
+        // Bound each attempt so a stalled connection cannot eat the whole
+        // retry budget.
+        signal: AbortSignal.timeout(CREDENTIAL_FETCH_TIMEOUT_MS),
       });
       if (response.ok) {
         const { credential } = (await response.json()) as {
@@ -42,7 +40,7 @@ async function resolveCredential(): Promise<string> {
         );
       } else {
         console.log(
-          `Credential endpoint returned ${response.status}; set AGENT_CREDENTIAL_ENDPOINT_ENABLED=true on the app service or provide HYPERDX_MCP_ACCESS_KEY ${progress}`,
+          `Credential endpoint returned ${response.status}; set AGENT_INVESTIGATIONS_ENABLED=true on the app service ${progress}`,
         );
       }
     } catch {
@@ -61,40 +59,20 @@ async function resolveCredential(): Promise<string> {
   return process.exit(1);
 }
 
-// Tool names that mutate ClickStack state. Only relevant when the credential
-// override is a personal access key — the provisioned agent credential is
-// server-enforced read-only and offers no write tools to match.
-const WRITE_TOOL_PATTERN = /save|delete|patch|create|update/i;
-
 async function connectClickstack(): Promise<{
   credential: string;
   tools: ToolDefinition[];
 }> {
   const credential = await resolveCredential();
 
-  // The server decides which tools this credential may use (agent credentials
-  // get the read-only profile), so everything offered is taken as-is.
+  // The server enforces the credential's read-only tool profile, so
+  // everything offered is taken as-is.
   const connection = await connectMcpServer('clickstack', {
     url: MCP_URL,
     headers: { authorization: `Bearer ${credential}` },
   });
 
-  if (credential.startsWith('hdx_agent_')) {
-    return { credential, tools: connection.tools };
-  }
-
-  // Personal-key override: enforce read-only client-side by dropping mutation
-  // tools, since the server grants this key its full surface.
-  const tools = connection.tools.filter(
-    tool => !WRITE_TOOL_PATTERN.test(tool.name),
-  );
-  const dropped = connection.tools.length - tools.length;
-  if (dropped > 0) {
-    console.warn(
-      `HYPERDX_MCP_ACCESS_KEY is not an agent credential: dropped ${dropped} write-capable tools to keep the agent read-only. Unset it to use the provisioned agent credential.`,
-    );
-  }
-  return { credential, tools };
+  return { credential, tools: connection.tools };
 }
 
 const clickstack = await connectClickstack();

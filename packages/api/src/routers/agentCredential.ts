@@ -6,7 +6,6 @@ import {
   findAgentInstallationByCredential,
 } from '@/controllers/agentInstallation';
 import { getAllTeams } from '@/controllers/team';
-import { findUserByAccessKey } from '@/controllers/user';
 import Alert from '@/models/alert';
 import AlertHistory from '@/models/alertHistory';
 import { setBusinessContext } from '@/utils/instrumentation';
@@ -55,8 +54,8 @@ export function createAgentCredentialApp() {
   });
 
   // Stores an investigation summary on the AlertHistory doc. Unlike the
-  // credential handout above this mutates Mongo, so it requires a credential
-  // (agent or personal access key) and is scoped to that credential's team.
+  // credential handout above this mutates Mongo, so it requires the agent
+  // credential and is scoped to that credential's team.
   app.post('/agent/investigations', async (req, res, next) => {
     try {
       const key = req.headers.authorization?.split('Bearer ')[1];
@@ -65,11 +64,10 @@ export function createAgentCredentialApp() {
       }
 
       const installation = await findAgentInstallationByCredential(key);
-      const teamId =
-        installation?.team ?? (await findUserByAccessKey(key))?.team;
-      if (!teamId) {
+      if (!installation) {
         return res.sendStatus(401);
       }
+      const teamId = installation.team;
 
       const { alertHistoryId, alertId, summary } = req.body ?? {};
       if (

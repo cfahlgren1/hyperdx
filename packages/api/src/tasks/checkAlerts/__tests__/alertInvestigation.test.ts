@@ -3,8 +3,7 @@ import mongoose from 'mongoose';
 import ms from 'ms';
 
 // Force the investigation feature on for this file. Dispatch goes through
-// global.fetch, which each test mocks (so no real request escapes and no
-// fire-and-forget promise outlives teardown).
+// global.fetch, which each test mocks so no real request escapes.
 jest.mock('@/config', () => ({
   ...jest.requireActual('@/config'),
   AGENT_INVESTIGATIONS_ENABLED: true,
@@ -12,6 +11,7 @@ jest.mock('@/config', () => ({
 }));
 
 import * as config from '@/config';
+import * as agentInstallation from '@/controllers/agentInstallation';
 import { createAlert } from '@/controllers/alerts';
 import { createTeam } from '@/controllers/team';
 import { bulkInsertLogs, getServer } from '@/fixtures';
@@ -318,16 +318,10 @@ describe('Alert investigation edge marking', () => {
       [],
     );
 
-    // The rollback happens on the fire-and-forget batch promise; poll briefly.
-    let released = false;
-    for (let i = 0; i < 40 && !released; i++) {
-      const doc = await Alert.findById(alert._id).select(
-        'investigationDispatchedAt',
-      );
-      released = doc?.investigationDispatchedAt == null;
-      if (!released) await new Promise(r => setTimeout(r, 50));
-    }
-    expect(released).toBe(true);
+    const doc = await Alert.findById(alert._id).select(
+      'investigationDispatchedAt',
+    );
+    expect(doc?.investigationDispatchedAt).toBeUndefined();
 
     // The failed fire's marker is cleared too, so a later fire retries.
     const marked = await AlertHistory.countDocuments({
@@ -335,5 +329,56 @@ describe('Alert investigation edge marking', () => {
       investigation: { $exists: true },
     });
     expect(marked).toBe(0);
+  });
+
+  it('does not dispatch without an agent credential', async () => {
+    jest
+      .spyOn(agentInstallation, 'ensureAgentCredential')
+      .mockRejectedValueOnce(new Error('credential unavailable'));
+    const team = await createTeam({ name: 'Credential Failure Team' });
+    const alert = await createTeamAlert(team._id);
+
+    await alertProvider.updateAlertState(
+      alert._id.toString(),
+      [freshFireHistory(alert._id)],
+      [],
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const marked = await AlertHistory.countDocuments({
+      alert: alert._id,
+      investigation: { $exists: true },
+    });
+    expect(marked).toBe(0);
+    const doc = await Alert.findById(alert._id).select(
+      'investigationDispatchedAt',
+    );
+    expect(doc?.investigationDispatchedAt).toBeUndefined();
+  });
+
+  it('keeps the marker and claim when a dispatch times out (ambiguous)', async () => {
+    // A timeout is ambiguous: the agent may have admitted the run before the
+    // connection gave up. Clearing the marker would 409 the eventual
+    // write-back, and releasing the claim would allow a duplicate run.
+    const timeoutError = new Error('The operation was aborted due to timeout');
+    timeoutError.name = 'TimeoutError';
+    fetchMock.mockRejectedValue(timeoutError);
+    const team = await createTeam({ name: 'Ambiguous Team' });
+    const alert = await createTeamAlert(team._id);
+
+    await alertProvider.updateAlertState(
+      alert._id.toString(),
+      [freshFireHistory(alert._id)],
+      [],
+    );
+    const marked = await AlertHistory.countDocuments({
+      alert: alert._id,
+      investigation: { $exists: true },
+    });
+    expect(marked).toBe(1);
+    const doc = await Alert.findById(alert._id).select(
+      'investigationDispatchedAt',
+    );
+    expect(doc?.investigationDispatchedAt).toBeTruthy();
   });
 });

@@ -336,7 +336,11 @@ export default function AlertsPage() {
   const [creatorFilter, setCreatorFilter] = useQueryState('creator');
   const [tab, setTab] = useQueryState('tab');
 
-  const { data: investigationsData } = api.useAlertInvestigations();
+  const {
+    data: investigationsData,
+    isLoading: investigationsLoading,
+    isError: investigationsError,
+  } = api.useAlertInvestigations();
   const investigationCount = investigationsData?.data?.length ?? 0;
   // Only surface the feature on deployments that enabled the agent (or that
   // have historical summaries); everyone else sees the stock alerts page.
@@ -429,7 +433,11 @@ export default function AlertsPage() {
               </Tabs>
             )}
             {activeTab === 'investigations' ? (
-              <InvestigationsFeed />
+              <InvestigationsFeed
+                entries={investigationsData?.data ?? []}
+                isLoading={investigationsLoading}
+                isError={investigationsError}
+              />
             ) : (
               <>
                 <Alert

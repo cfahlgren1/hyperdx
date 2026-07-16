@@ -315,10 +315,6 @@ async function loadAlert(
 }
 
 export default class DefaultAlertProvider implements AlertProvider {
-  // In-flight investigation dispatches, flushed in asyncDispose so an
-  // externally-scheduled task's process.exit doesn't kill them mid-flight.
-  private investigationDispatches: Promise<void>[] = [];
-
   // Remaining global dispatch budget for this task run (see
   // MAX_INVESTIGATION_DISPATCHES_PER_RUN).
   private investigationBudget = MAX_INVESTIGATION_DISPATCHES_PER_RUN;
@@ -332,8 +328,7 @@ export default class DefaultAlertProvider implements AlertProvider {
   }
 
   async asyncDispose() {
-    await Promise.allSettled(this.investigationDispatches);
-    await Promise.all([mongooseConnection.close()]);
+    await mongooseConnection.close();
   }
 
   async getAlertTasks(): Promise<AlertTask[]> {
@@ -449,26 +444,6 @@ export default class DefaultAlertProvider implements AlertProvider {
       });
     }
 
-    // Dispatch agent investigations for freshly-fired histories that were
-    // persisted (so a real _id exists). The eval loop only sets the
-    // investigation marker when investigations are enabled, so the marker is
-    // the single gate here. Suppressed fires get their marker cleared so a
-    // marker only ever means "an investigation was actually requested".
-    const requestedDocs = historyResults
-      .filter(
-        (
-          result,
-        ): result is PromiseFulfilledResult<
-          mongoose.HydratedDocument<IAlertHistory>
-        > =>
-          result.status === 'fulfilled' && result.value.investigation != null,
-      )
-      .map(result => result.value);
-
-    if (requestedDocs.length > 0) {
-      await this.dispatchInvestigations(alertId, requestedDocs);
-    }
-
     // Determine final alert state: use successfully saved histories if any, otherwise fallback to computed state
     // The alert state is ALERT if ANY history (successful or computed) is in ALERT state, otherwise OK
     const successfulHistories = historyResults
@@ -491,6 +466,34 @@ export default class DefaultAlertProvider implements AlertProvider {
       { _id: new mongoose.Types.ObjectId(alertId) },
       { $set: { state: finalState, executionErrors: errors } },
     );
+
+    // Dispatch agent investigations for freshly-fired histories that were
+    // persisted (so a real _id exists). The eval loop only sets the
+    // investigation marker when investigations are enabled, so the marker is
+    // the single gate here. Suppressed fires get their marker cleared so a
+    // marker only ever means "an investigation was actually requested". Must
+    // never break the canonical state update above.
+    const requestedDocs = historyResults
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<
+          mongoose.HydratedDocument<IAlertHistory>
+        > =>
+          result.status === 'fulfilled' && result.value.investigation != null,
+      )
+      .map(result => result.value);
+
+    if (requestedDocs.length > 0) {
+      try {
+        await this.dispatchInvestigations(alertId, requestedDocs);
+      } catch (error) {
+        logger.error(
+          { alertId, error: String(error) },
+          'Failed to dispatch agent investigations',
+        );
+      }
+    }
   }
 
   /**
@@ -545,6 +548,19 @@ export default class DefaultAlertProvider implements AlertProvider {
         ...requestedDocs.map(doc => doc.investigation!.requestedAt.getTime()),
       ),
     );
+    const releaseClaim = () =>
+      Alert.updateOne(
+        {
+          _id: new mongoose.Types.ObjectId(alertId),
+          investigationDispatchedAt: evalTime,
+        },
+        { $unset: { investigationDispatchedAt: '' } },
+      ).catch(error =>
+        logger.warn(
+          { alertId, error: String(error) },
+          'Failed to release investigation dispatch claim',
+        ),
+      );
     const cutoff = new Date(evalTime.getTime() - INVESTIGATION_COOLDOWN_MS);
     const claimed = await Alert.findOneAndUpdate(
       {
@@ -601,54 +617,51 @@ export default class DefaultAlertProvider implements AlertProvider {
       );
       return null;
     });
+    if (credential == null) {
+      alertInvestigationDispatchCounter.add(toDispatch.length, {
+        outcome: 'failed',
+      });
+      await Promise.all([clearAll(toDispatch), releaseClaim()]);
+      return;
+    }
 
     const batch = toDispatch.map(doc =>
       this.dispatchInvestigation(alertId, doc, credential),
     );
-    this.investigationDispatches.push(
-      Promise.all(batch).then(async results => {
-        const failedDocs = toDispatch.filter((_, i) => !results[i]);
-        if (failedDocs.length > 0) {
-          await clearAll(failedDocs);
-        }
-        if (results.every(ok => !ok)) {
-          // Nothing was requested: release the claim so the next fire
-          // retries. Conditional on our own stamp so a newer claim survives.
-          await Alert.updateOne(
-            {
-              _id: new mongoose.Types.ObjectId(alertId),
-              investigationDispatchedAt: evalTime,
-            },
-            { $unset: { investigationDispatchedAt: '' } },
-          ).catch(error =>
-            logger.warn(
-              { alertId, error: String(error) },
-              'Failed to release investigation dispatch claim',
-            ),
-          );
-        }
-      }),
-    );
+    const results = await Promise.all(batch);
+    // Only definitive failures are cleaned up; an 'ambiguous' dispatch may
+    // have been admitted, so its marker and claim stay.
+    const failedDocs = toDispatch.filter((_, i) => results[i] === 'failed');
+    if (failedDocs.length > 0) {
+      await clearAll(failedDocs);
+    }
+    if (failedDocs.length === results.length) {
+      // Nothing was requested: release the claim so the next fire retries.
+      // Conditional on our own stamp so a newer claim survives.
+      await releaseClaim();
+    }
   }
 
   /**
    * POST one investigation request to the agent's workflow. Only identifiers
-   * are passed — the agent looks up the alert and telemetry itself. Returns
-   * whether the workflow accepted the run; never throws.
+   * are passed — the agent looks up the alert and telemetry itself. Never
+   * throws. A timeout is 'ambiguous': the agent may have durably admitted
+   * the run before the connection gave up, so the caller must not treat it
+   * as a definitive failure.
    */
   private async dispatchInvestigation(
     alertId: string,
     history: Pick<IAlertHistory, 'group' | 'createdAt'> & {
       _id: mongoose.Types.ObjectId;
     },
-    credential: string | null,
-  ): Promise<boolean> {
+    credential: string,
+  ): Promise<'dispatched' | 'failed' | 'ambiguous'> {
     try {
       const res = await fetch(config.AGENT_WORKFLOW_URL, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          ...(credential && { authorization: `Bearer ${credential}` }),
+          authorization: `Bearer ${credential}`,
         },
         body: JSON.stringify({
           alertHistoryId: history._id.toString(),
@@ -667,14 +680,18 @@ export default class DefaultAlertProvider implements AlertProvider {
           'Agent investigation dispatch returned a non-OK status',
         );
       }
-      return res.ok;
+      return res.ok ? 'dispatched' : 'failed';
     } catch (error) {
-      alertInvestigationDispatchCounter.add(1, { outcome: 'failed' });
+      const outcome =
+        error instanceof Error && error.name === 'TimeoutError'
+          ? 'ambiguous'
+          : 'failed';
+      alertInvestigationDispatchCounter.add(1, { outcome });
       logger.warn(
-        { alertId, error: String(error) },
+        { alertId, outcome, error: String(error) },
         'Failed to dispatch agent investigation',
       );
-      return false;
+      return outcome;
     }
   }
 

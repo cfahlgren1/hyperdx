@@ -54,18 +54,13 @@ export const IS_LOCAL_APP_MODE =
 export const DEFAULT_CONNECTIONS = env.DEFAULT_CONNECTIONS;
 export const DEFAULT_SOURCES = env.DEFAULT_SOURCES;
 
-// Serves the on-call agent's MCP credential on a dedicated internal-only
-// listener. Only enable when that port is reachable solely from a trusted
-// network (the Compose file enables it but never publishes the port).
-export const AGENT_CREDENTIAL_ENDPOINT_ENABLED =
-  env.AGENT_CREDENTIAL_ENDPOINT_ENABLED === 'true';
 export const AGENT_CREDENTIAL_PORT = Number.parseInt(
   env.AGENT_CREDENTIAL_PORT ?? '8001',
 );
 
 // When enabled, a fresh alert fire triggers an agent investigation: the alert
-// task fire-and-forgets a request to the on-call agent's investigateAlert
-// workflow, and the agent writes its findings back to the internal listener.
+// task requests the on-call agent's investigateAlert workflow, and the agent
+// writes its findings back to a dedicated internal-only listener.
 export const AGENT_INVESTIGATIONS_ENABLED =
   env.AGENT_INVESTIGATIONS_ENABLED === 'true';
 export const AGENT_WORKFLOW_URL =

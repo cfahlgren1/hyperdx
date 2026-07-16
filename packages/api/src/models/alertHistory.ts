@@ -91,6 +91,13 @@ AlertHistorySchema.index({ alert: 1, createdAt: -1 });
 // Used by getPreviousAlertHistories (groups by {alert, group}, sorts by createdAt)
 AlertHistorySchema.index({ alert: 1, group: 1, createdAt: -1 });
 
+// Used by getRecentInvestigations: only histories with a delivered summary
+// are indexed, so the newest-first scan touches investigation docs only.
+AlertHistorySchema.index(
+  { createdAt: -1 },
+  { partialFilterExpression: { 'investigation.summary': { $exists: true } } },
+);
+
 export default mongoose.model<IAlertHistory>(
   'AlertHistory',
   AlertHistorySchema,
