@@ -23,6 +23,7 @@ import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
 import {
   clickHouseErrorResult,
+  getMcpLogComment,
   parseTimeRange,
 } from '@/mcp/tools/query/helpers';
 import type { ToolRegistrar } from '@/mcp/tools/types';
@@ -281,6 +282,7 @@ LIMIT {topN:UInt32}
           clickhouse_settings: {
             // Prevent DDL/DML injection via parentFilter — only SELECTs allowed.
             readonly: '1',
+            log_comment: getMcpLogComment(context),
             ...(source.querySettings
               ? Object.fromEntries(
                   source.querySettings.map(s => [s.setting, s.value]),

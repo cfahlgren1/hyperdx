@@ -12,6 +12,7 @@ import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
 import {
   clickHouseErrorResult,
+  getMcpLogComment,
   parseTimeRange,
 } from '@/mcp/tools/query/helpers';
 import type { ToolRegistrar } from '@/mcp/tools/types';
@@ -396,6 +397,7 @@ export function registerTraceWaterfall({
           connectionId: source.connection.toString(),
           clickhouse_settings: {
             readonly: '1',
+            log_comment: getMcpLogComment(context),
             // Per-query timeout matches the rest of the MCP for consistency.
             ...(source.querySettings
               ? Object.fromEntries(
@@ -514,6 +516,7 @@ export function registerTraceWaterfall({
                 connectionId: logSource.connection.toString(),
                 clickhouse_settings: {
                   readonly: '1',
+                  log_comment: getMcpLogComment(context),
                   ...(logSource.querySettings
                     ? Object.fromEntries(
                         logSource.querySettings.map(s => [s.setting, s.value]),
