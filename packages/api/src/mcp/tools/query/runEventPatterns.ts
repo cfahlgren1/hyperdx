@@ -10,6 +10,7 @@ import { DisplayType } from '@hyperdx/common-utils/dist/types';
 
 import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
+import type { McpContext } from '@/mcp/tools/types';
 import { mcpServerError, mcpUserError } from '@/mcp/utils/errors';
 import { trimToolResponse } from '@/utils/trimToolResponse';
 
@@ -18,11 +19,12 @@ import {
   resolveBodyExpression,
   SAFE_BODY_EXPR_CHARS,
 } from './helpers';
+import { getMcpClickhouseSettings } from './helpers';
 
 // ─── Event pattern mining ────────────────────────────────────────────────────
 
 export async function runEventPatterns(
-  teamId: string,
+  context: McpContext,
   sourceId: string,
   startDate: Date,
   endDate: Date,
@@ -35,6 +37,7 @@ export async function runEventPatterns(
     trendBuckets?: number;
   },
 ) {
+  const { teamId } = context;
   const sampleSize = options?.sampleSize ?? 10_000;
   const topN = options?.topN ?? 20;
   const trendBuckets = options?.trendBuckets ?? 24;
@@ -155,13 +158,13 @@ export async function runEventPatterns(
         config: sampleConfig,
         metadata,
         querySettings: source.querySettings,
-        opts: { clickhouse_settings: { max_execution_time: 30 } },
+        opts: { clickhouse_settings: getMcpClickhouseSettings(context) },
       }),
       clickhouseClient.queryChartConfig({
         config: countConfig,
         metadata,
         querySettings: source.querySettings,
-        opts: { clickhouse_settings: { max_execution_time: 30 } },
+        opts: { clickhouse_settings: getMcpClickhouseSettings(context) },
       }),
     ]);
   } catch (err) {

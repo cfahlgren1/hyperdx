@@ -98,20 +98,14 @@ export function registerEventPatterns({
       }
       const { startDate, endDate } = timeRange;
 
-      return runEventPatterns(
-        teamId.toString(),
-        input.sourceId,
-        startDate,
-        endDate,
-        {
-          where: input.where,
-          whereLanguage: input.whereLanguage,
-          bodyExpression: input.bodyExpression,
-          sampleSize: input.sampleSize,
-          topN: input.topN,
-          trendBuckets: input.trendBuckets,
-        },
-      );
+      return runEventPatterns(context, input.sourceId, startDate, endDate, {
+        where: input.where,
+        whereLanguage: input.whereLanguage,
+        bodyExpression: input.bodyExpression,
+        sampleSize: input.sampleSize,
+        topN: input.topN,
+        trendBuckets: input.trendBuckets,
+      });
     },
   );
 }

@@ -24,6 +24,7 @@ import ms from 'ms';
 
 import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
+import type { McpContext } from '@/mcp/tools/types';
 import type { McpErrorResult } from '@/mcp/utils/errors';
 import { mcpServerError, mcpUserError } from '@/mcp/utils/errors';
 import {
@@ -69,13 +70,31 @@ export const SAFE_BODY_EXPR_CHARS = /^[\w.':\[\]\-]+$/;
 
 // ─── Safety limits ───────────────────────────────────────────────────────────
 
-/** ClickHouse settings applied to all MCP query-tool executions.
- *  readonly=2 so max_execution_time can be set
- *  (readonly=1 rejects all setting changes). */
-const MCP_CLICKHOUSE_SETTINGS = {
-  max_execution_time: 30,
-  readonly: 2,
-} as const;
+/**
+ * ClickHouse settings applied to all MCP tool executions.
+ *  - readonly=2 so max_execution_time can be set
+ *    (readonly=1 rejects all setting changes)
+ *  - log_comment attributes every query to the MCP principal, so agent
+ *    activity is auditable in system.query_log
+ */
+export function getMcpLogComment(context: McpContext): string {
+  return JSON.stringify({
+    source: 'clickstack-mcp',
+    team: context.teamId,
+    principal: context.principal.kind,
+    principal_id: context.principal.id,
+  });
+}
+
+export function getMcpClickhouseSettings(
+  context: McpContext,
+): Record<string, string | number> {
+  return {
+    max_execution_time: 30,
+    readonly: 2,
+    log_comment: getMcpLogComment(context),
+  };
+}
 
 /**
  * HTTP request timeout for MCP query-tool ClickHouse clients.
@@ -377,7 +396,7 @@ export function assertSourceKindMatchesSelect(
 // ─── Tile execution ──────────────────────────────────────────────────────────
 
 export async function runConfigTile(
-  teamId: string,
+  context: McpContext,
   tile: ExternalDashboardTileWithId,
   startDate: Date,
   endDate: Date,
@@ -386,6 +405,8 @@ export async function runConfigTile(
   if (!isConfigTile(tile)) {
     return mcpUserError('Invalid tile: config field missing');
   }
+
+  const { teamId } = context;
 
   const internalTile = convertToInternalTileConfig(tile);
   const savedConfig = internalTile.config;
@@ -414,7 +435,7 @@ export async function runConfigTile(
       const selectStr =
         typeof builderConfig.select === 'string' ? builderConfig.select : '';
       return runEventPatterns(
-        teamId,
+        context,
         builderConfig.source,
         startDate,
         endDate,
@@ -560,7 +581,7 @@ export async function runConfigTile(
         config: renderConfig,
         metadata,
         querySettings: source.querySettings,
-        opts: { clickhouse_settings: MCP_CLICKHOUSE_SETTINGS },
+        opts: { clickhouse_settings: getMcpClickhouseSettings(context) },
       });
       return formatQueryResult(result);
     } catch (e) {
@@ -624,7 +645,7 @@ export async function runConfigTile(
       config: chartConfig,
       metadata,
       querySettings: undefined,
-      opts: { clickhouse_settings: MCP_CLICKHOUSE_SETTINGS },
+      opts: { clickhouse_settings: getMcpClickhouseSettings(context) },
     });
     return formatQueryResult(result);
   } catch (e) {

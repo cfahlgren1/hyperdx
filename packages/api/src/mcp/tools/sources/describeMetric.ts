@@ -13,8 +13,11 @@ import { z } from 'zod';
 
 import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
-import { clickHouseErrorResult } from '@/mcp/tools/query/helpers';
-import type { ToolRegistrar } from '@/mcp/tools/types';
+import {
+  clickHouseErrorResult,
+  getMcpLogComment,
+} from '@/mcp/tools/query/helpers';
+import type { McpContext, ToolRegistrar } from '@/mcp/tools/types';
 import { mcpServerError, mcpUserError } from '@/mcp/utils/errors';
 import logger from '@/utils/logger';
 import { trimToolResponse } from '@/utils/trimToolResponse';
@@ -169,6 +172,7 @@ async function fetchUnitAndDescription({
   hasUnit,
   hasDescription,
   signal,
+  logComment,
 }: {
   clickhouseClient: ClickhouseClient;
   databaseName: string;
@@ -180,6 +184,7 @@ async function fetchUnitAndDescription({
   hasUnit: boolean;
   hasDescription: boolean;
   signal: AbortSignal;
+  logComment: string;
 }): Promise<{ unit?: string; description?: string }> {
   if (!hasUnit && !hasDescription) return {};
 
@@ -222,6 +227,7 @@ async function fetchUnitAndDescription({
       clickhouse_settings: {
         max_execution_time: METRIC_ATTR_KEYS_MAX_EXEC_SECONDS,
         timeout_overflow_mode: 'break',
+        log_comment: logComment,
       },
       abort_signal: signal,
     });
@@ -271,6 +277,7 @@ async function fetchAttributeKeys({
   startDate,
   endDate,
   signal,
+  logComment,
 }: {
   clickhouseClient: ClickhouseClient;
   databaseName: string;
@@ -281,6 +288,7 @@ async function fetchAttributeKeys({
   startDate: Date;
   endDate: Date;
   signal: AbortSignal;
+  logComment: string;
 }): Promise<FetchResult<Record<string, string[]>>> {
   const mapColumns =
     filterColumnMetaByType(columns, [JSDataType.Map])?.filter(
@@ -324,6 +332,7 @@ async function fetchAttributeKeys({
       clickhouse_settings: {
         max_execution_time: METRIC_ATTR_KEYS_MAX_EXEC_SECONDS,
         timeout_overflow_mode: 'break',
+        log_comment: logComment,
       },
       abort_signal: signal,
     });
@@ -375,6 +384,7 @@ async function sampleAttributeValues({
   startDate,
   endDate,
   signal,
+  logComment,
 }: {
   clickhouseClient: ClickhouseClient;
   databaseName: string;
@@ -386,6 +396,7 @@ async function sampleAttributeValues({
   startDate: Date;
   endDate: Date;
   signal: AbortSignal;
+  logComment: string;
 }): Promise<FetchResult<SampleAttributeValuesData>> {
   const flatKeyExprs: { display: string; mapColumn: string; key: string }[] =
     [];
@@ -452,6 +463,7 @@ async function sampleAttributeValues({
       clickhouse_settings: {
         max_execution_time: METRIC_ATTR_KEYS_MAX_EXEC_SECONDS,
         timeout_overflow_mode: 'break',
+        log_comment: logComment,
       },
       abort_signal: signal,
     });
@@ -478,10 +490,12 @@ async function sampleAttributeValues({
 }
 
 async function describeMetricImpl(
-  teamId: string,
+  context: McpContext,
   input: z.infer<typeof describeMetricSchema>,
   signal: AbortSignal,
 ) {
+  const { teamId } = context;
+  const logComment = getMcpLogComment(context);
   const source = await getSource(teamId, input.sourceId);
   if (!source) {
     return mcpUserError(
@@ -553,6 +567,7 @@ async function describeMetricImpl(
 
   const [meta, attributeKeysResult] = await Promise.all([
     fetchUnitAndDescription({
+      logComment,
       clickhouseClient,
       databaseName,
       tableName,
@@ -565,6 +580,7 @@ async function describeMetricImpl(
       signal,
     }),
     fetchAttributeKeys({
+      logComment,
       clickhouseClient,
       databaseName,
       tableName,
@@ -601,6 +617,7 @@ async function describeMetricImpl(
 
   if (input.sampleValues && Object.keys(attributeKeys).length > 0) {
     const valuesResult = await sampleAttributeValues({
+      logComment,
       clickhouseClient,
       databaseName,
       tableName,
@@ -735,7 +752,7 @@ export function registerDescribeMetric({
       });
       try {
         return await Promise.race([
-          describeMetricImpl(teamId.toString(), input, controller.signal),
+          describeMetricImpl(context, input, controller.signal),
           timeoutPromise,
         ]);
       } catch (e) {

@@ -14,8 +14,10 @@ import { DisplayType } from '@hyperdx/common-utils/dist/types';
 
 import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
+import type { McpContext } from '@/mcp/tools/types';
 
 import { resolveBodyExpression } from './helpers';
+import { getMcpClickhouseSettings } from './helpers';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -47,7 +49,7 @@ export interface DenoiseResult {
  * the shared TypeScript Drain implementation.
  */
 export async function denoiseSearchResults(
-  teamId: string,
+  context: McpContext,
   sourceId: string,
   startDate: Date,
   endDate: Date,
@@ -60,6 +62,8 @@ export async function denoiseSearchResults(
   if (rows.length === 0) {
     return { rows, removedPatterns: [], skipped: 'no_rows' };
   }
+
+  const { teamId } = context;
 
   // ── Resolve source & connection ──
   const source = await getSource(teamId, sourceId);
@@ -151,13 +155,13 @@ export async function denoiseSearchResults(
         config: sampleConfig,
         metadata,
         querySettings: source.querySettings,
-        opts: { clickhouse_settings: { max_execution_time: 30 } },
+        opts: { clickhouse_settings: getMcpClickhouseSettings(context) },
       }),
       clickhouseClient.queryChartConfig({
         config: countConfig,
         metadata,
         querySettings: source.querySettings,
-        opts: { clickhouse_settings: { max_execution_time: 30 } },
+        opts: { clickhouse_settings: getMcpClickhouseSettings(context) },
       }),
     ]);
   } catch {

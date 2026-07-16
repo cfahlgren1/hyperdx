@@ -90,15 +90,9 @@ export function registerSearch({ context, registerTool }: ToolRegistrar) {
         whereLanguage: input.whereLanguage,
       });
 
-      const result = await runConfigTile(
-        teamId.toString(),
-        tile,
-        startDate,
-        endDate,
-        {
-          maxResults: input.maxResults,
-        },
-      );
+      const result = await runConfigTile(context, tile, startDate, endDate, {
+        maxResults: input.maxResults,
+      });
 
       // ── Denoising post-processing ──
       if (!input.denoise || ('isError' in result && result.isError)) {
@@ -128,7 +122,7 @@ export function registerSearch({ context, registerTool }: ToolRegistrar) {
       let denoised;
       try {
         denoised = await denoiseSearchResults(
-          teamId.toString(),
+          context,
           input.sourceId,
           startDate,
           endDate,
