@@ -59,7 +59,7 @@ const output = v.object({
   summary: v.pipe(
     v.string(),
     v.description(
-      'Markdown investigation report: what fired, what you observed, and the most probable cause. Distinguish observed facts from hypotheses.',
+      'Markdown investigation report: what fired, what you observed, the most probable cause, and recommended remediation steps. Distinguish observed facts from hypotheses.',
     ),
   ),
   gist: v.pipe(
