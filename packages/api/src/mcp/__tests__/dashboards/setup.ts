@@ -62,7 +62,8 @@ export function setupDashboardTests() {
 
     const mcpContext: McpContext = {
       teamId: ctx.team._id.toString(),
-      userId: ctx.user._id.toString(),
+      access: 'full',
+      principal: { kind: 'user', id: ctx.user._id.toString() },
     };
     ctx.client = await createTestClient(mcpContext);
   });

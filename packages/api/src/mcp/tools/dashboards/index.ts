@@ -1,4 +1,9 @@
-import type { ToolDefinition, ToolRegistrar } from '@/mcp/tools/types';
+import type {
+  ToolDefinition,
+  ToolRegistrar,
+  WriteToolDefinition,
+  WriteToolRegistrar,
+} from '@/mcp/tools/types';
 
 import { registerDeleteDashboard } from './deleteDashboard';
 import { registerGetDashboard } from './getDashboard';
@@ -10,14 +15,19 @@ import { registerSearchDashboards } from './searchDashboards';
 
 export * from './schemas';
 
-const dashboardsTools: ToolDefinition = (registrar: ToolRegistrar) => {
+export const dashboardsReadTools: ToolDefinition = (
+  registrar: ToolRegistrar,
+) => {
   registerGetDashboard(registrar);
   registerGetDashboardTile(registrar);
-  registerSaveDashboard(registrar);
-  registerPatchDashboard(registrar);
-  registerDeleteDashboard(registrar);
   registerSearchDashboards(registrar);
   registerQueryTile(registrar);
 };
 
-export default dashboardsTools;
+export const dashboardsWriteTools: WriteToolDefinition = (
+  registrar: WriteToolRegistrar,
+) => {
+  registerSaveDashboard(registrar);
+  registerPatchDashboard(registrar);
+  registerDeleteDashboard(registrar);
+};

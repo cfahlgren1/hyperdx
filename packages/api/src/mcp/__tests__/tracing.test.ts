@@ -72,11 +72,16 @@ jest.mock('@/utils/logger', () => ({
   },
 }));
 
+import type { McpContext } from '@/mcp/tools/types';
 import { mcpServerError, mcpUserError } from '@/mcp/utils/errors';
 import { withToolTracing } from '@/mcp/utils/tracing';
 
 describe('withToolTracing', () => {
-  const context = { teamId: 'team-123', userId: 'user-456' };
+  const context: McpContext = {
+    teamId: 'team-123',
+    access: 'full',
+    principal: { kind: 'user', id: 'user-456' },
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();

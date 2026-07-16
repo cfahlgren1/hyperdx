@@ -1,7 +1,7 @@
 import { uniq } from 'lodash';
 
 import * as config from '@/config';
-import type { ToolRegistrar } from '@/mcp/tools/types';
+import type { WriteToolRegistrar } from '@/mcp/tools/types';
 import { mcpUserError } from '@/mcp/utils/errors';
 import Dashboard from '@/models/dashboard';
 import {
@@ -22,7 +22,7 @@ import {
 export function registerPatchDashboard({
   context,
   registerTool,
-}: ToolRegistrar): void {
+}: WriteToolRegistrar): void {
   const { teamId } = context;
   const frontendUrl = config.FRONTEND_URL;
 

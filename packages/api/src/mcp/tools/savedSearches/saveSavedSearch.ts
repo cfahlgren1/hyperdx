@@ -5,7 +5,7 @@ import {
   updateSavedSearch,
 } from '@/controllers/savedSearch';
 import { getSource } from '@/controllers/sources';
-import type { ToolRegistrar } from '@/mcp/tools/types';
+import type { WriteToolRegistrar } from '@/mcp/tools/types';
 import {
   mcpServerError,
   mcpUserError,
@@ -17,8 +17,9 @@ import { mcpSaveSavedSearchSchema } from './schemas';
 export function registerSaveSavedSearch({
   context,
   registerTool,
-}: ToolRegistrar): void {
-  const { teamId, userId } = context;
+}: WriteToolRegistrar): void {
+  const { teamId, principal } = context;
+  const userId = principal.id;
   const frontendUrl = config.FRONTEND_URL;
 
   registerTool(

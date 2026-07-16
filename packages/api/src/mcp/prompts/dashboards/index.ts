@@ -20,81 +20,85 @@ const dashboardPrompts: PromptDefinition = (server, context) => {
   const { teamId } = context;
 
   // ── create_dashboard ──────────────────────────────────────────────────────
+  // Instructs the model to create dashboards, so it is only offered to
+  // principals that can call the dashboard write tools.
 
-  server.registerPrompt(
-    'create_dashboard',
-    {
-      title: 'Create a Dashboard',
-      description:
-        'Create a ClickStack dashboard with the MCP tools. ' +
-        'Follow the recommended workflow, pick tile types, write queries, ' +
-        'and validate results against your real data sources.',
-      argsSchema: {
-        description: z
-          .string()
-          .optional()
-          .describe(
-            'What the dashboard should monitor (e.g. "API error rates and latency")',
-          ),
+  if (context.access === 'full') {
+    server.registerPrompt(
+      'create_dashboard',
+      {
+        title: 'Create a Dashboard',
+        description:
+          'Create a ClickStack dashboard with the MCP tools. ' +
+          'Follow the recommended workflow, pick tile types, write queries, ' +
+          'and validate results against your real data sources.',
+        argsSchema: {
+          description: z
+            .string()
+            .optional()
+            .describe(
+              'What the dashboard should monitor (e.g. "API error rates and latency")',
+            ),
+        },
       },
-    },
-    async ({ description }) => {
-      let sourceSummary: string;
-      let traceSourceId: string;
-      let logSourceId: string;
+      async ({ description }) => {
+        let sourceSummary: string;
+        let traceSourceId: string;
+        let logSourceId: string;
 
-      try {
-        const [sources, connections] = await Promise.all([
-          getSources(teamId),
-          getConnectionsByTeam(teamId),
-        ]);
+        try {
+          const [sources, connections] = await Promise.all([
+            getSources(teamId),
+            getConnectionsByTeam(teamId),
+          ]);
 
-        sourceSummary = buildSourceSummary(
-          sources.map(s => ({
-            _id: s._id,
-            name: s.name,
-            kind: s.kind,
-            connection: s.connection,
-          })),
-          connections.map(c => ({ _id: c._id, name: c.name })),
-        );
-        traceSourceId = getFirstSourceId(
-          sources.map(s => ({ _id: s._id, kind: s.kind })),
-          'trace',
-        );
-        logSourceId = getFirstSourceId(
-          sources.map(s => ({ _id: s._id, kind: s.kind })),
-          'log',
-        );
-      } catch (e) {
-        logger.warn(
-          { teamId, error: e },
-          'Failed to fetch sources for create_dashboard prompt',
-        );
-        sourceSummary =
-          'Could not fetch sources. Call clickstack_list_sources to discover available data.';
-        traceSourceId = '<SOURCE_ID>';
-        logSourceId = '<SOURCE_ID>';
-      }
+          sourceSummary = buildSourceSummary(
+            sources.map(s => ({
+              _id: s._id,
+              name: s.name,
+              kind: s.kind,
+              connection: s.connection,
+            })),
+            connections.map(c => ({ _id: c._id, name: c.name })),
+          );
+          traceSourceId = getFirstSourceId(
+            sources.map(s => ({ _id: s._id, kind: s.kind })),
+            'trace',
+          );
+          logSourceId = getFirstSourceId(
+            sources.map(s => ({ _id: s._id, kind: s.kind })),
+            'log',
+          );
+        } catch (e) {
+          logger.warn(
+            { teamId, error: e },
+            'Failed to fetch sources for create_dashboard prompt',
+          );
+          sourceSummary =
+            'Could not fetch sources. Call clickstack_list_sources to discover available data.';
+          traceSourceId = '<SOURCE_ID>';
+          logSourceId = '<SOURCE_ID>';
+        }
 
-      return {
-        messages: [
-          {
-            role: 'user' as const,
-            content: {
-              type: 'text' as const,
-              text: buildCreateDashboardPrompt(
-                sourceSummary,
-                traceSourceId,
-                logSourceId,
-                description,
-              ),
+        return {
+          messages: [
+            {
+              role: 'user' as const,
+              content: {
+                type: 'text' as const,
+                text: buildCreateDashboardPrompt(
+                  sourceSummary,
+                  traceSourceId,
+                  logSourceId,
+                  description,
+                ),
+              },
             },
-          },
-        ],
-      };
-    },
-  );
+          ],
+        };
+      },
+    );
+  }
 
   // ── dashboard_examples ────────────────────────────────────────────────────
 

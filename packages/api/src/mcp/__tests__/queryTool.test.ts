@@ -74,7 +74,8 @@ describe('MCP Query Tools', () => {
 
     const context: McpContext = {
       teamId: team._id.toString(),
-      userId: user._id.toString(),
+      access: 'full',
+      principal: { kind: 'user', id: user._id.toString() },
     };
     client = await createTestClient(context);
   });

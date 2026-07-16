@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 
 import { deleteDashboard } from '@/controllers/dashboard';
-import type { ToolRegistrar } from '@/mcp/tools/types';
+import type { WriteToolRegistrar } from '@/mcp/tools/types';
 import { mcpUserError } from '@/mcp/utils/errors';
 import Dashboard from '@/models/dashboard';
 import { objectIdSchema } from '@/utils/zod';
@@ -10,7 +10,7 @@ import { objectIdSchema } from '@/utils/zod';
 export function registerDeleteDashboard({
   context,
   registerTool,
-}: ToolRegistrar): void {
+}: WriteToolRegistrar): void {
   const { teamId } = context;
 
   registerTool(
