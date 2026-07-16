@@ -41,7 +41,8 @@ app.all('/', mcpRateLimiter, validateUserAccessKey, async (req, res) => {
 
   const context: McpContext = {
     teamId: teamId.toString(),
-    userId,
+    access: 'full',
+    principal: { kind: 'user', id: userId },
   };
 
   setTraceAttributes({

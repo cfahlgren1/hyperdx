@@ -54,7 +54,8 @@ describe('MCP Saved Search Tools', () => {
 
     const context: McpContext = {
       teamId: team._id.toString(),
-      userId: user._id.toString(),
+      access: 'full',
+      principal: { kind: 'user', id: user._id.toString() },
     };
     client = await createTestClient(context);
   });
@@ -135,7 +136,8 @@ describe('MCP Saved Search Tools', () => {
 
         const otherTeamContext: McpContext = {
           teamId: '000000000000000000000099',
-          userId: user._id.toString(),
+          access: 'full',
+          principal: { kind: 'user', id: user._id.toString() },
         };
         const client2 = await createTestClient(otherTeamContext);
 

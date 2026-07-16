@@ -1,13 +1,21 @@
-import type { ToolDefinition, ToolRegistrar } from '@/mcp/tools/types';
+import type {
+  ToolDefinition,
+  ToolRegistrar,
+  WriteToolDefinition,
+  WriteToolRegistrar,
+} from '@/mcp/tools/types';
 
 import { registerGetAlert } from './getAlert';
 import { registerGetWebhook } from './getWebhook';
 import { registerSaveAlert } from './saveAlert';
 
-const alertsTools: ToolDefinition = (registrar: ToolRegistrar) => {
+export const alertsReadTools: ToolDefinition = (registrar: ToolRegistrar) => {
   registerGetAlert(registrar);
   registerGetWebhook(registrar);
-  registerSaveAlert(registrar);
 };
 
-export default alertsTools;
+export const alertsWriteTools: WriteToolDefinition = (
+  registrar: WriteToolRegistrar,
+) => {
+  registerSaveAlert(registrar);
+};
