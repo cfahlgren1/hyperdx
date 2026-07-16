@@ -338,6 +338,14 @@ export default function AlertsPage() {
 
   const { data: investigationsData } = api.useAlertInvestigations();
   const investigationCount = investigationsData?.data?.length ?? 0;
+  // Only surface the feature on deployments that enabled the agent (or that
+  // have historical summaries); everyone else sees the stock alerts page.
+  const showInvestigationsTab =
+    (investigationsData?.enabled ?? false) || investigationCount > 0;
+  const activeTab =
+    showInvestigationsTab && tab === 'investigations'
+      ? 'investigations'
+      : 'alerts';
 
   const allTags = React.useMemo(() => {
     const tags = new Set<string>();
@@ -392,33 +400,35 @@ export default function AlertsPage() {
           <div className="text-center my-4 fs-8">Error</div>
         ) : alerts?.length ? (
           <Container maw={1500}>
-            <Tabs
-              value={tab ?? 'alerts'}
-              onChange={value =>
-                setTab(value === 'alerts' ? null : (value ?? null))
-              }
-              mt="md"
-            >
-              <Tabs.List>
-                <Tabs.Tab value="alerts" leftSection={<IconBell size={14} />}>
-                  Alerts
-                </Tabs.Tab>
-                <Tabs.Tab
-                  value="investigations"
-                  leftSection={<IconReportSearch size={14} />}
-                  rightSection={
-                    investigationCount > 0 ? (
-                      <Badge size="xs" variant="light">
-                        {investigationCount}
-                      </Badge>
-                    ) : undefined
-                  }
-                >
-                  Investigations
-                </Tabs.Tab>
-              </Tabs.List>
-            </Tabs>
-            {(tab ?? 'alerts') === 'investigations' ? (
+            {showInvestigationsTab && (
+              <Tabs
+                value={activeTab}
+                onChange={value =>
+                  setTab(value === 'alerts' ? null : (value ?? null))
+                }
+                mt="md"
+              >
+                <Tabs.List>
+                  <Tabs.Tab value="alerts" leftSection={<IconBell size={14} />}>
+                    Alerts
+                  </Tabs.Tab>
+                  <Tabs.Tab
+                    value="investigations"
+                    leftSection={<IconReportSearch size={14} />}
+                    rightSection={
+                      investigationCount > 0 ? (
+                        <Badge size="xs" variant="light">
+                          {investigationCount}
+                        </Badge>
+                      ) : undefined
+                    }
+                  >
+                    Investigations
+                  </Tabs.Tab>
+                </Tabs.List>
+              </Tabs>
+            )}
+            {activeTab === 'investigations' ? (
               <InvestigationsFeed />
             ) : (
               <>

@@ -2149,6 +2149,9 @@ export type AlertInvestigationItem = z.infer<
 >;
 
 export const AlertInvestigationsApiResponseSchema = z.object({
+  // Whether the deployment has agent investigations enabled; lets the UI hide
+  // the feature entirely instead of showing a dead tab.
+  enabled: z.boolean(),
   data: z.array(AlertInvestigationItemSchema),
 });
 

@@ -4,7 +4,6 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import { AlertInvestigationItem } from '@hyperdx/common-utils/dist/types';
 import {
-  Anchor,
   Badge,
   Box,
   Collapse,
@@ -170,17 +169,9 @@ export function InvestigationsFeed() {
         />
         <Text fw={600}>No investigations yet</Text>
         <Text size="sm" c="dimmed" ta="center" maw={420}>
-          Investigations require the optional on-call agent. When it is enabled
-          and an alert fires, the agent investigates the underlying telemetry
-          and its findings appear here.
+          When an alert fires, the on-call agent investigates the underlying
+          telemetry and its findings appear here.
         </Text>
-        <Anchor
-          href="https://github.com/cfahlgren1/hyperdx/tree/main/packages/agent#alert-investigations"
-          target="_blank"
-          size="sm"
-        >
-          Set up the on-call agent →
-        </Anchor>
       </Stack>
     );
   }

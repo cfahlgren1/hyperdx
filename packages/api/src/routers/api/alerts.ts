@@ -11,6 +11,7 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { processRequest, validateRequest } from 'zod-express-middleware';
 
+import * as config from '@/config';
 import {
   getAlertTransitionsInRange,
   getRecentAlertHistories,
@@ -132,7 +133,7 @@ router.get('/investigations', async (req, res: InvestigationsExpRes, next) => {
     }
 
     const data = await getRecentInvestigations(teamId.toString());
-    sendJson(res, { data });
+    sendJson(res, { enabled: config.AGENT_INVESTIGATIONS_ENABLED, data });
   } catch (e) {
     next(e);
   }

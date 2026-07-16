@@ -1091,6 +1091,8 @@ describe('alerts router', () => {
       // A literal path that would be an invalid ObjectId for /:id.
       const res = await agent.get('/alerts/investigations').expect(200);
       expect(res.body.data).toEqual([]);
+      // Test env does not enable the agent, so the UI hides the feature.
+      expect(res.body.enabled).toBe(false);
     });
 
     it('returns only completed investigations for the team, newest first', async () => {
