@@ -5,6 +5,17 @@ import { AlertState } from '@/models/alert';
 
 import type { ObjectId } from '.';
 
+// Set when a fresh alert fire triggers an agent investigation. States are
+// implicit: `requestedAt` set = an investigation was requested; `summary` set
+// = the agent delivered findings. A request whose dispatch or investigation
+// fails simply never gets a summary — delivery is at-most-once by design, and
+// the alert itself still notifies normally.
+interface IAlertInvestigation {
+  requestedAt: Date;
+  summary?: string;
+  completedAt?: Date;
+}
+
 export interface IAlertHistory {
   alert: ObjectId;
   counts: number;
@@ -13,6 +24,7 @@ export interface IAlertHistory {
   lastValues: { startTime: Date; count: number }[];
   group?: string; // For group-by alerts, stores the group identifier
   fired?: boolean;
+  investigation?: IAlertInvestigation;
 }
 
 const AlertHistorySchema = new Schema<IAlertHistory>({
@@ -49,6 +61,24 @@ const AlertHistorySchema = new Schema<IAlertHistory>({
   fired: {
     type: Boolean,
     required: false,
+  },
+  investigation: {
+    required: false,
+    type: {
+      _id: false,
+      requestedAt: {
+        type: Date,
+        required: true,
+      },
+      summary: {
+        type: String,
+        required: false,
+      },
+      completedAt: {
+        type: Date,
+        required: false,
+      },
+    },
   },
 });
 

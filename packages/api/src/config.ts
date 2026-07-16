@@ -63,6 +63,14 @@ export const AGENT_CREDENTIAL_PORT = Number.parseInt(
   env.AGENT_CREDENTIAL_PORT ?? '8001',
 );
 
+// When enabled, a fresh alert fire triggers an agent investigation: the alert
+// task fire-and-forgets a request to the on-call agent's investigateAlert
+// workflow, and the agent writes its findings back to the internal listener.
+export const AGENT_INVESTIGATIONS_ENABLED =
+  env.AGENT_INVESTIGATIONS_ENABLED === 'true';
+export const AGENT_WORKFLOW_URL =
+  env.AGENT_WORKFLOW_URL ?? 'http://agent:4010/workflows/investigateAlert';
+
 export const IS_PROMQL_ENABLED = env.ENABLE_PROMQL === 'true';
 
 // FOR CI ONLY

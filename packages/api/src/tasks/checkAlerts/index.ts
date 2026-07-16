@@ -49,6 +49,7 @@ import ms from 'ms';
 import { performance } from 'perf_hooks';
 import { serializeError } from 'serialize-error';
 
+import * as config from '@/config';
 import { ALERT_HISTORY_QUERY_CONCURRENCY } from '@/controllers/alertHistory';
 import { AlertState, IAlert, IAlertError } from '@/models/alert';
 import AlertHistory, { IAlertHistory } from '@/models/alertHistory';
@@ -1086,6 +1087,37 @@ export const processAlert = async (
       }
     };
 
+    // Mark a *fresh* fire (the OK/PENDING -> ALERT edge) so the provider can
+    // dispatch an agent investigation once the history is persisted. We only
+    // mark on the edge (not every breaching tick) to avoid re-investigating a
+    // sustained alert, and only when the feature is enabled so no stale pending
+    // markers accumulate. Silenced alerts are skipped entirely: the user asked
+    // not to be bothered, so we don't spend investigation tokens either.
+    // Dispatch itself happens at persistence time, where the AlertHistory _id
+    // exists (see DefaultAlertProvider.updateAlertState).
+    const markInvestigationIfFreshFire = (
+      history: IAlertHistory,
+      previous: AggregatedAlertHistory | undefined,
+    ) => {
+      // Only suppress when the previous history is an ongoing fired episode.
+      // The `fired` flag alone is not enough: a breach-then-resolve within one
+      // evaluation persists {state: OK, fired: true}, and a genuine new fire
+      // after that must still be investigated.
+      const previousInFiredEpisode =
+        (previous?.state === AlertState.ALERT ||
+          previous?.state === AlertState.PENDING) &&
+        previous.fired === true;
+      if (
+        !config.AGENT_INVESTIGATIONS_ENABLED ||
+        history.state !== AlertState.ALERT ||
+        previousInFiredEpisode ||
+        (alert.silenced?.until?.getTime() ?? 0) > Date.now()
+      ) {
+        return;
+      }
+      history.investigation = { requestedAt: nowInMinsRoundDown };
+    };
+
     const numWindowsToLookBack = alert.numConsecutiveWindows ?? 1;
 
     const shouldFireBasedOnConsecutiveWindows = (
@@ -1159,6 +1191,7 @@ export const processAlert = async (
         if (shouldFireBasedOnConsecutiveWindows()) {
           history.state = AlertState.ALERT;
           history.fired = true;
+          markInvestigationIfFreshFire(history, previous);
           await trySendNotification({
             state: AlertState.ALERT,
             group: '',
@@ -1365,6 +1398,10 @@ export const processAlert = async (
       if (hitAlertThisRun) {
         const context = latestAlertContext.get(groupKey);
         if (context) {
+          // Mark before the mock-previous injection below so the fresh-fire
+          // edge is evaluated against the *real* previous state.
+          markInvestigationIfFreshFire(history, groupPrevious);
+
           await trySendNotification({
             state: AlertState.ALERT,
             group: groupKey,

@@ -1,7 +1,15 @@
 import express from 'express';
+import mongoose from 'mongoose';
 
-import { ensureAgentCredential } from '@/controllers/agentInstallation';
+import {
+  ensureAgentCredential,
+  findAgentInstallationByCredential,
+} from '@/controllers/agentInstallation';
 import { getAllTeams } from '@/controllers/team';
+import { findUserByAccessKey } from '@/controllers/user';
+import Alert from '@/models/alert';
+import AlertHistory from '@/models/alertHistory';
+import { setBusinessContext } from '@/utils/instrumentation';
 import logger from '@/utils/logger';
 
 // Required on every provisioning request. This is not a secret — it defends
@@ -21,6 +29,7 @@ const AGENT_PROVISION_HEADER = 'x-hyperdx-agent-provision';
 export function createAgentCredentialApp() {
   const app = express();
   app.disable('x-powered-by');
+  app.use(express.json());
 
   app.get('/agent/credential', async (req, res, next) => {
     try {
@@ -40,6 +49,78 @@ export function createAgentCredentialApp() {
 
       const credential = await ensureAgentCredential(team._id.toString());
       return res.json({ credential });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Receives an investigation summary from the on-call agent and stores it on
+  // the AlertHistory doc. Unlike the credential handout above, this MUTATES
+  // Mongo, so it authenticates the caller's credential (not just the SSRF
+  // header) and is strictly scoped to the credential's team. Accepts the same
+  // credential types as the MCP endpoint (agent credential or personal access
+  // key), so a HYPERDX_MCP_ACCESS_KEY override keeps write-back working.
+  app.post('/agent/investigations', async (req, res, next) => {
+    try {
+      const key = req.headers.authorization?.split('Bearer ')[1];
+      if (!key) {
+        return res.sendStatus(401);
+      }
+
+      const installation = await findAgentInstallationByCredential(key);
+      const teamId =
+        installation?.team ?? (await findUserByAccessKey(key))?.team;
+      if (!teamId) {
+        return res.sendStatus(401);
+      }
+
+      const { alertHistoryId, summary } = req.body ?? {};
+      if (typeof alertHistoryId !== 'string' || typeof summary !== 'string') {
+        return res
+          .status(400)
+          .json({ error: 'alertHistoryId and summary are required' });
+      }
+      if (!mongoose.isValidObjectId(alertHistoryId)) {
+        return res.sendStatus(404);
+      }
+
+      const history =
+        await AlertHistory.findById(alertHistoryId).select('alert');
+      if (!history) {
+        return res.sendStatus(404);
+      }
+
+      // Confirm the credential's team owns this alert before writing. A 403
+      // (not 404) is fine here: the id was well-formed and exists, we just
+      // won't cross tenant boundaries.
+      const alert = await Alert.findById(history.alert).select('team');
+      if (!alert || alert.team?.toString() !== teamId.toString()) {
+        return res.sendStatus(403);
+      }
+
+      setBusinessContext({ teamId: teamId.toString() });
+
+      // Only histories the alert task marked for investigation are writable,
+      // and delivered summaries are immutable. The filter makes the
+      // check-and-set atomic, so concurrent write-backs cannot both succeed.
+      const updated = await AlertHistory.findOneAndUpdate(
+        {
+          _id: history._id,
+          'investigation.requestedAt': { $exists: true },
+          'investigation.summary': { $exists: false },
+        },
+        {
+          $set: {
+            'investigation.summary': summary,
+            'investigation.completedAt': new Date(),
+          },
+        },
+      );
+      if (!updated) {
+        return res.sendStatus(409);
+      }
+
+      return res.sendStatus(204);
     } catch (e) {
       next(e);
     }

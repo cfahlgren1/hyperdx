@@ -36,9 +36,28 @@ import {
 } from '@/tasks/checkAlerts/providers';
 import { MappedOmit } from '@/tasks/types';
 import { convertMsToGranularityString } from '@/utils/common';
+import { getCounter } from '@/utils/instrumentation';
 import logger from '@/utils/logger';
 
 type PartialAlertDetails = MappedOmit<AlertDetails, 'previousMap'>;
+
+const alertInvestigationDispatchCounter = getCounter(
+  'hyperdx.alerts.investigation_dispatches',
+  {
+    description:
+      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched or failed).',
+  },
+);
+
+// Bounds LLM spend when a grouped alert's groups all breach on the same tick
+// (group cardinality is telemetry-controlled, so it can be externally
+// inflated). Dropped groups are counted and logged; the alert itself still
+// notifies normally for every group.
+const MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION = 5;
+
+// Bounds each workflow dispatch so a stalled agent endpoint cannot accumulate
+// sockets across evaluations (and so the asyncDispose flush is bounded too).
+const INVESTIGATION_DISPATCH_TIMEOUT_MS = 10_000;
 
 async function getSavedSearchDetails(
   alert: IAlert,
@@ -270,11 +289,19 @@ async function loadAlert(
 }
 
 export default class DefaultAlertProvider implements AlertProvider {
+  // In-flight investigation dispatches. Fire-and-forget during evaluation, but
+  // flushed in asyncDispose: externally-scheduled task runs process.exit(0) as
+  // soon as the task resolves (tasks/index.ts), which would otherwise kill the
+  // requests mid-flight. Each dispatch is bounded by an AbortSignal timeout,
+  // so the flush is too.
+  private investigationDispatches: Promise<void>[] = [];
+
   async init() {
     await Promise.all([connectDB()]);
   }
 
   async asyncDispose() {
+    await Promise.allSettled(this.investigationDispatches);
     await Promise.all([mongooseConnection.close()]);
   }
 
@@ -391,6 +418,44 @@ export default class DefaultAlertProvider implements AlertProvider {
       });
     }
 
+    // Fire-and-forget an agent investigation for each freshly-fired history
+    // that was persisted (so a real _id exists). The eval loop only sets the
+    // investigation marker when investigations are enabled, so the marker is
+    // the single gate here. Never blocks or fails alert eval; delivery is
+    // deliberately at-most-once.
+    const requestedDocs = historyResults
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<
+          mongoose.HydratedDocument<IAlertHistory>
+        > =>
+          result.status === 'fulfilled' && result.value.investigation != null,
+      )
+      .map(result => result.value);
+
+    const toDispatch = requestedDocs.slice(
+      0,
+      MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+    );
+    const dropped = requestedDocs.length - toDispatch.length;
+    if (dropped > 0) {
+      alertInvestigationDispatchCounter.add(dropped, { outcome: 'failed' });
+      logger.warn(
+        {
+          alertId,
+          dropped,
+          cap: MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+        },
+        'Dropped agent investigation dispatches over the per-evaluation cap',
+      );
+    }
+    for (const doc of toDispatch) {
+      this.investigationDispatches.push(
+        this.dispatchInvestigation(alertId, doc),
+      );
+    }
+
     // Determine final alert state: use successfully saved histories if any, otherwise fallback to computed state
     // The alert state is ALERT if ANY history (successful or computed) is in ALERT state, otherwise OK
     const successfulHistories = historyResults
@@ -413,6 +478,51 @@ export default class DefaultAlertProvider implements AlertProvider {
       { _id: new mongoose.Types.ObjectId(alertId) },
       { $set: { state: finalState, executionErrors: errors } },
     );
+  }
+
+  /**
+   * Dispatch a request to the on-call agent's investigateAlert workflow. The
+   * agent looks up the alert and telemetry itself via its read-only tools, so
+   * we only pass identifiers (no values: the trailing lastValues entry can be
+   * a non-breaching 0 from an empty bucket, which would mislead the agent).
+   * The returned promise never rejects and is not awaited by evaluation (it
+   * is flushed in asyncDispose); a failed dispatch is logged and counted, and
+   * that history simply never receives a summary (at-most-once).
+   */
+  private async dispatchInvestigation(
+    alertId: string,
+    history: Pick<IAlertHistory, 'group' | 'createdAt'> & {
+      _id: mongoose.Types.ObjectId;
+    },
+  ): Promise<void> {
+    try {
+      const res = await fetch(config.AGENT_WORKFLOW_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          alertHistoryId: history._id.toString(),
+          alertId,
+          group: history.group,
+          triggeredAt: history.createdAt,
+        }),
+        signal: AbortSignal.timeout(INVESTIGATION_DISPATCH_TIMEOUT_MS),
+      });
+      alertInvestigationDispatchCounter.add(1, {
+        outcome: res.ok ? 'dispatched' : 'failed',
+      });
+      if (!res.ok) {
+        logger.warn(
+          { alertId, status: res.status },
+          'Agent investigation dispatch returned a non-OK status',
+        );
+      }
+    } catch (error) {
+      alertInvestigationDispatchCounter.add(1, { outcome: 'failed' });
+      logger.warn(
+        { alertId, error: String(error) },
+        'Failed to dispatch agent investigation',
+      );
+    }
   }
 
   async recordAlertErrors(alertId: string, errors: IAlertError[]) {

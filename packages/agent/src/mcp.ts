@@ -18,6 +18,14 @@ const CREDENTIAL_FETCH_DELAY_MS = 5_000;
 async function resolveCredential(): Promise<string> {
   const override = process.env.HYPERDX_MCP_ACCESS_KEY?.trim();
   if (override) {
+    if (!override.startsWith('hdx_agent_')) {
+      // A personal access key gets the FULL MCP tool surface (including
+      // writes), and investigations run autonomously on untrusted telemetry.
+      // Only the provisioned agent credential is server-enforced read-only.
+      console.warn(
+        'HYPERDX_MCP_ACCESS_KEY is not an agent credential: the assistant and alert investigations will run with this key’s full (write-capable) tool surface. Unset it to use the provisioned read-only agent credential.',
+      );
+    }
     return override;
   }
 
@@ -61,7 +69,10 @@ async function resolveCredential(): Promise<string> {
   return process.exit(1);
 }
 
-async function connectClickstackTools(): Promise<ToolDefinition[]> {
+async function connectClickstack(): Promise<{
+  credential: string;
+  tools: ToolDefinition[];
+}> {
   const credential = await resolveCredential();
 
   // The server decides which tools this credential may use (agent credentials
@@ -71,7 +82,13 @@ async function connectClickstackTools(): Promise<ToolDefinition[]> {
     headers: { authorization: `Bearer ${credential}` },
   });
 
-  return connection.tools;
+  return { credential, tools: connection.tools };
 }
 
-export const clickstackTools = await connectClickstackTools();
+const clickstack = await connectClickstack();
+
+export const clickstackTools = clickstack.tools;
+
+// The same read-only credential the agent uses for MCP also authenticates its
+// investigation write-back to the ClickStack API (see workflows/investigateAlert.ts).
+export const clickstackCredential = clickstack.credential;
