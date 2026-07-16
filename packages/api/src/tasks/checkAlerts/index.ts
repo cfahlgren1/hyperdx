@@ -1087,19 +1087,14 @@ export const processAlert = async (
       }
     };
 
-    // Mark a *fresh* fire (the OK/PENDING -> ALERT edge) so the provider can
-    // dispatch an agent investigation once the history is persisted. We only
-    // mark on the edge (not every breaching tick) to avoid re-investigating a
-    // sustained alert, and only when the feature is enabled so no stale pending
-    // markers accumulate. Silenced alerts are skipped entirely: the user asked
-    // not to be bothered, so we don't spend investigation tokens either.
-    // Dispatch itself happens at persistence time, where the AlertHistory _id
-    // exists.
+    // Mark a *fresh* fire (the OK/PENDING -> ALERT edge) for an agent
+    // investigation. Only the edge is marked — never a sustained breach or a
+    // silenced alert. Dispatch happens at persistence time, where the
+    // AlertHistory _id exists.
     const markInvestigationIfFreshFire = (
       history: IAlertHistory,
       previous: AggregatedAlertHistory | undefined,
     ) => {
-      // Only suppress when the previous history is an ongoing fired episode.
       // The `fired` flag alone is not enough: a breach-then-resolve within one
       // evaluation persists {state: OK, fired: true}, and a genuine new fire
       // after that must still be investigated.

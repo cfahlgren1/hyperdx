@@ -8,12 +8,8 @@ const WRITEBACK_URL =
   process.env.HYPERDX_INVESTIGATION_WRITEBACK_URL?.trim() ||
   'http://localhost:8001/agent/investigations';
 
-/**
- * Post the findings summary back to the ClickStack API, authenticated with the
- * agent's own credential. The API stores it on the AlertHistory doc after
- * confirming the credential's team owns the alert AND that the history record
- * belongs to the investigated alert.
- */
+// Post the findings summary back to the ClickStack API, which stores it on
+// the alert history after team- and alert-ownership checks.
 async function postFindings(
   alertHistoryId: string,
   alertId: string,
@@ -37,11 +33,10 @@ async function postFindings(
   }
 }
 
-// Exposes POST /workflows/investigateAlert over HTTP. Without this export the
-// production build (flue build) does not serve the workflow at all — only
-// `flue dev` exposes route-less workflows. Requires the dispatching API to
-// present the agent's own credential, so other processes that can reach the
-// port cannot start paid investigation runs.
+// Serves the workflow over HTTP (without this export, the production build
+// does not expose it — only `flue dev` serves route-less workflows) and
+// requires the agent's own credential so network reachability alone cannot
+// start paid runs.
 export const route: WorkflowRouteHandler = async (c, next) => {
   const authorization = c.req.header('authorization');
   if (authorization !== `Bearer ${clickstackCredential}`) {

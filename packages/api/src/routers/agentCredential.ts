@@ -54,12 +54,9 @@ export function createAgentCredentialApp() {
     }
   });
 
-  // Receives an investigation summary from the on-call agent and stores it on
-  // the AlertHistory doc. Unlike the credential handout above, this MUTATES
-  // Mongo, so it authenticates the caller's credential (not just the SSRF
-  // header) and is strictly scoped to the credential's team. Accepts the same
-  // credential types as the MCP endpoint (agent credential or personal access
-  // key), so a HYPERDX_MCP_ACCESS_KEY override keeps write-back working.
+  // Stores an investigation summary on the AlertHistory doc. Unlike the
+  // credential handout above this mutates Mongo, so it requires a credential
+  // (agent or personal access key) and is scoped to that credential's team.
   app.post('/agent/investigations', async (req, res, next) => {
     try {
       const key = req.headers.authorization?.split('Bearer ')[1];
@@ -97,16 +94,13 @@ export function createAgentCredentialApp() {
         return res.sendStatus(404);
       }
 
-      // The history must belong to the alert that was investigated, so a
-      // mismatched pair cannot graft one alert's findings onto another's
+      // A mismatched pair must not graft one alert's findings onto another's
       // record.
       if (history.alert?.toString() !== alertId) {
         return res.sendStatus(409);
       }
 
-      // Confirm the credential's team owns this alert before writing. A 403
-      // (not 404) is fine here: the id was well-formed and exists, we just
-      // won't cross tenant boundaries.
+      // The credential's team must own the alert before we write.
       const alert = await Alert.findById(history.alert).select('team');
       if (!alert || alert.team?.toString() !== teamId.toString()) {
         return res.sendStatus(403);
@@ -114,9 +108,8 @@ export function createAgentCredentialApp() {
 
       setBusinessContext({ teamId: teamId.toString() });
 
-      // Only histories the alert task marked for investigation are writable,
-      // and delivered summaries are immutable. The filter makes the
-      // check-and-set atomic, so concurrent write-backs cannot both succeed.
+      // Only marked histories are writable and delivered summaries are
+      // immutable; the filter makes the check-and-set atomic.
       const updated = await AlertHistory.findOneAndUpdate(
         {
           _id: history._id,

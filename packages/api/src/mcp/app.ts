@@ -8,15 +8,10 @@ import rateLimiter, { rateLimiterKeyGenerator } from '@/utils/rateLimiter';
 
 import { createServer } from './mcpServer';
 
-// The SDK applies localhost-only DNS-rebinding protection by default, which
-// rejects any request whose Host header isn't localhost — including in-network
-// callers like the on-call agent reaching `http://app:8000/mcp` inside
+// The SDK's DNS-rebinding protection rejects any Host that isn't localhost,
+// which breaks in-network callers like the agent reaching `app:8000` inside
 // Compose. Keep the protection but allowlist the hosts a deployment actually
-// serves: localhost, the Compose service name, the configured frontend, and
-// any extra hosts from MCP_ALLOWED_HOSTS (comma-separated, for other
-// topologies). Matching is port-agnostic, so bare hostnames suffice. This
-// mirrors upstream's buildAllowedHosts shape (PR #2646) to keep merges
-// additive.
+// serves (extendable via the comma-separated MCP_ALLOWED_HOSTS env).
 const buildAllowedHosts = (urls: (string | undefined)[]): string[] => {
   const hosts = ['localhost', '127.0.0.1', '[::1]', 'app'];
   for (const extra of (process.env.MCP_ALLOWED_HOSTS ?? '').split(',')) {

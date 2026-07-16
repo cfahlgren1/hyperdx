@@ -61,11 +61,9 @@ async function resolveCredential(): Promise<string> {
   return process.exit(1);
 }
 
-// Tool-name patterns that mutate ClickStack state. The provisioned agent
-// credential is server-enforced read-only, so this list never matches for it;
-// it only applies when HYPERDX_MCP_ACCESS_KEY is a personal access key, whose
-// full tool surface would otherwise hand write access to an autonomous agent
-// reading untrusted telemetry.
+// Tool names that mutate ClickStack state. Only relevant when the credential
+// override is a personal access key — the provisioned agent credential is
+// server-enforced read-only and offers no write tools to match.
 const WRITE_TOOL_PATTERN = /save|delete|patch|create|update/i;
 
 async function connectClickstack(): Promise<{

@@ -5,11 +5,9 @@ import { AlertState } from '@/models/alert';
 
 import type { ObjectId } from '.';
 
-// Set when a fresh alert fire triggers an agent investigation. States are
-// implicit: `requestedAt` set = an investigation was requested; `summary` set
-// = the agent delivered findings. A request whose dispatch or investigation
-// fails simply never gets a summary — delivery is at-most-once by design, and
-// the alert itself still notifies normally.
+// Set when a fresh alert fire triggers an agent investigation: `requestedAt`
+// = requested, `summary` = delivered. A failed investigation simply never
+// gets a summary (at-most-once by design).
 interface IAlertInvestigation {
   requestedAt: Date;
   summary?: string;

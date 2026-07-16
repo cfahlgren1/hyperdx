@@ -52,33 +52,23 @@ const alertInvestigationDispatchCounter = getCounter(
 );
 
 // Bounds LLM spend when a grouped alert's groups all breach on the same tick
-// (group cardinality is telemetry-controlled, so it can be externally
-// inflated). Dropped groups are counted and logged; the alert itself still
-// notifies normally for every group.
+// (group cardinality is telemetry-controlled, so it can be externally inflated).
 const MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION = 5;
 
 // Bounds each workflow dispatch so a stalled agent endpoint cannot accumulate
 // sockets across evaluations (and so the asyncDispose flush is bounded too).
 const INVESTIGATION_DISPATCH_TIMEOUT_MS = 10_000;
 
-// Per-alert floor on investigation frequency: a flapping alert (breaching and
-// recovering around its threshold) crosses the fire edge on every flap, which
-// would otherwise investigate each one. At most one investigation per alert
-// per this window, enforced via an atomic claim on the alert document so
-// concurrent evaluators can neither double-dispatch nor suppress each other.
-// Fixed 1h matches upstream's managed-agents dedupe window.
+// At most one investigation per alert per window, so a flapping alert
+// (which crosses the fire edge on every flap) can't burn tokens.
 const INVESTIGATION_COOLDOWN_MS = 60 * 60 * 1000;
 
-// Global per-task-run budget across ALL alerts, so a broad outage (many alerts
-// firing in the same sweep) cannot fan out into unbounded concurrent LLM runs.
-// The per-alert cooldown handles repeat waves; this bounds the first wave.
+// Global per-task-run budget, so a broad outage firing many alerts in one
+// sweep cannot fan out into unbounded concurrent LLM runs.
 const MAX_INVESTIGATION_DISPATCHES_PER_RUN = 10;
 
-/**
- * Remove investigation markers from histories whose dispatch was suppressed
- * (cooldown or per-evaluation cap), so the marker only ever means "an
- * investigation was actually requested from the agent". Best-effort.
- */
+// Remove markers from suppressed fires, so a marker only ever means "an
+// investigation was actually requested from the agent". Best-effort.
 async function clearInvestigationMarkers(
   ids: mongoose.Types.ObjectId[],
 ): Promise<void> {
@@ -325,19 +315,16 @@ async function loadAlert(
 }
 
 export default class DefaultAlertProvider implements AlertProvider {
-  // In-flight investigation dispatches. Fire-and-forget during evaluation, but
-  // flushed in asyncDispose: externally-scheduled task runs process.exit(0) as
-  // soon as the task resolves, which would otherwise kill the
-  // requests mid-flight. Each dispatch is bounded by an AbortSignal timeout,
-  // so the flush is too.
+  // In-flight investigation dispatches, flushed in asyncDispose so an
+  // externally-scheduled task's process.exit doesn't kill them mid-flight.
   private investigationDispatches: Promise<void>[] = [];
 
   // Remaining global dispatch budget for this task run (see
   // MAX_INVESTIGATION_DISPATCHES_PER_RUN).
   private investigationBudget = MAX_INVESTIGATION_DISPATCHES_PER_RUN;
 
-  // The team whose credential the agent holds (the first team — matching the
-  // provisioning endpoint). Cached on first dispatch; null when no team exists.
+  // The team whose credential the agent holds (the first team). Cached on
+  // first dispatch; null when no team exists.
   private installationTeamId: string | null | undefined = undefined;
 
   async init() {
@@ -507,19 +494,10 @@ export default class DefaultAlertProvider implements AlertProvider {
   }
 
   /**
-   * Decide whether this batch of freshly-fired histories dispatches, then do
-   * it. Gating (all suppressed fires get their markers cleared, awaited, so a
-   * marker only ever means "actually dispatched"):
-   *
-   * 1. Global per-run budget — bounds first-wave fan-out across alerts.
-   * 2. Per-alert cooldown via an ATOMIC claim on the alert document: a single
-   *    findOneAndUpdate both checks the window and stamps it, so concurrent
-   *    evaluators can neither double-dispatch nor suppress each other.
-   * 3. Per-evaluation group cap.
-   *
-   * The network calls themselves are fire-and-forget (flushed in
-   * asyncDispose); if EVERY dispatch in the batch fails, the claim is rolled
-   * back so the next fire retries instead of being cooled down by a failure.
+   * Gate a batch of freshly-fired histories (per-run budget, per-alert
+   * cooldown via an atomic claim, per-evaluation cap) and dispatch the
+   * survivors. Suppressed fires get their markers cleared. If every dispatch
+   * in the batch fails, the claim is rolled back so the next fire retries.
    */
   private async dispatchInvestigations(
     alertId: string,
@@ -540,10 +518,9 @@ export default class DefaultAlertProvider implements AlertProvider {
       return;
     }
 
-    // The agent holds the first team's credential, so investigations are
-    // limited to that team; dispatching for
-    // any other team would just fail the workflow's auth check every fire.
-    // Make the single-team assumption explicit and observable instead.
+    // The agent holds the first team's credential; dispatching for any other
+    // team would just fail the workflow's auth check every fire, so skip
+    // those explicitly.
     if (this.installationTeamId === undefined) {
       const [firstTeam] = await getAllTeams(['_id']);
       this.installationTeamId = firstTeam?._id?.toString() ?? null;
@@ -562,8 +539,7 @@ export default class DefaultAlertProvider implements AlertProvider {
       return;
     }
 
-    // The claim compares in evaluation-time (carried on the marker), not wall
-    // clock, so tests and replayed evaluations behave consistently.
+    // Compare in evaluation-time (carried on the marker), not wall clock.
     const evalTime = new Date(
       Math.max(
         ...requestedDocs.map(doc => doc.investigation!.requestedAt.getTime()),
@@ -636,9 +612,8 @@ export default class DefaultAlertProvider implements AlertProvider {
           await clearAll(failedDocs);
         }
         if (results.every(ok => !ok)) {
-          // Nothing was actually requested: release the claim so the next
-          // fire retries instead of waiting out the cooldown. Conditional on
-          // our own stamp so a newer claim is never clobbered.
+          // Nothing was requested: release the claim so the next fire
+          // retries. Conditional on our own stamp so a newer claim survives.
           await Alert.updateOne(
             {
               _id: new mongoose.Types.ObjectId(alertId),
@@ -657,12 +632,9 @@ export default class DefaultAlertProvider implements AlertProvider {
   }
 
   /**
-   * POST one investigation request to the on-call agent's investigateAlert
-   * workflow. The agent looks up the alert and telemetry itself via its
-   * read-only tools, so we only pass identifiers (no values: the trailing
-   * lastValues entry can be a non-breaching 0 from an empty bucket, which
-   * would mislead the agent). Returns whether the workflow accepted the run;
-   * never throws.
+   * POST one investigation request to the agent's workflow. Only identifiers
+   * are passed — the agent looks up the alert and telemetry itself. Returns
+   * whether the workflow accepted the run; never throws.
    */
   private async dispatchInvestigation(
     alertId: string,
