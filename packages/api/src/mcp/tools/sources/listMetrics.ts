@@ -10,7 +10,9 @@ import { z } from 'zod';
 
 import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
+import { getMcpLogComment } from '@/mcp/tools/query/helpers';
 import type { ToolRegistrar } from '@/mcp/tools/types';
+import type { McpContext } from '@/mcp/tools/types';
 import { mcpServerError, mcpUserError } from '@/mcp/utils/errors';
 import logger from '@/utils/logger';
 
@@ -158,6 +160,7 @@ async function fetchMetricsForKind({
   afterName,
   limit,
   signal,
+  logComment,
 }: {
   clickhouseClient: ClickhouseClient;
   metadata: ReturnType<typeof getMetadata>;
@@ -171,6 +174,7 @@ async function fetchMetricsForKind({
   afterName: string | undefined;
   limit: number;
   signal: AbortSignal;
+  logComment: string;
 }): Promise<MetricEntry[]> {
   // Defensive column-presence check so we don't reference MetricUnit /
   // MetricDescription on non-OTel-default schemas.
@@ -229,6 +233,7 @@ async function fetchMetricsForKind({
     clickhouse_settings: {
       max_execution_time: MAX_EXEC_SECONDS,
       timeout_overflow_mode: 'break',
+      log_comment: logComment,
     },
     abort_signal: signal,
   });
@@ -283,7 +288,7 @@ export function registerListMetrics({
 
       try {
         return await Promise.race([
-          listMetricsImpl(teamId.toString(), input, controller.signal),
+          listMetricsImpl(context, input, controller.signal),
           timeoutPromise,
         ]);
       } catch (e) {
@@ -306,10 +311,11 @@ export function registerListMetrics({
 }
 
 async function listMetricsImpl(
-  teamId: string,
+  context: McpContext,
   input: z.infer<typeof listMetricsSchema>,
   signal: AbortSignal,
 ) {
+  const { teamId } = context;
   const source = await getSource(teamId, input.sourceId);
   if (!source) {
     return mcpUserError(
@@ -391,6 +397,7 @@ async function listMetricsImpl(
     let kindMetrics: MetricEntry[];
     try {
       kindMetrics = await fetchMetricsForKind({
+        logComment: getMcpLogComment(context),
         clickhouseClient,
         metadata,
         kind,

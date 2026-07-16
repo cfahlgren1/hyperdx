@@ -282,12 +282,7 @@ export function registerTable({ context, registerTool }: ToolRegistrar) {
         orderBy: resolveOrderBy(input.orderBy, selectItems),
       });
 
-      const result = await runConfigTile(
-        teamId.toString(),
-        tile,
-        startDate,
-        endDate,
-      );
+      const result = await runConfigTile(context, tile, startDate, endDate);
 
       // Surface language-mismatch warnings so the agent knows the top-level
       // where was not applied to every select item.

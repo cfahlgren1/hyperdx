@@ -19,6 +19,7 @@ import { mcpUserError } from '@/mcp/utils/errors';
 import { trimToolResponse } from '@/utils/trimToolResponse';
 
 import { clickHouseErrorResult, parseTimeRange } from './helpers';
+import { getMcpClickhouseSettings } from './helpers';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -354,7 +355,7 @@ export function registerEventDeltas({ context, registerTool }: ToolRegistrar) {
             query_params: targetSql.params,
             format: 'JSON',
             connectionId: source.connection.toString(),
-            clickhouse_settings: { max_execution_time: 30 },
+            clickhouse_settings: getMcpClickhouseSettings(context),
             abort_signal: abortController.signal,
           }),
           clickhouseClient.query({
@@ -362,7 +363,7 @@ export function registerEventDeltas({ context, registerTool }: ToolRegistrar) {
             query_params: baselineSql.params,
             format: 'JSON',
             connectionId: source.connection.toString(),
-            clickhouse_settings: { max_execution_time: 30 },
+            clickhouse_settings: getMcpClickhouseSettings(context),
             abort_signal: abortController.signal,
           }),
         ]);

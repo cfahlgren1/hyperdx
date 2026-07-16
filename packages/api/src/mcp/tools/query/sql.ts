@@ -86,7 +86,7 @@ export function registerSql({ context, registerTool }: ToolRegistrar) {
         sqlTemplate: input.sql,
       });
 
-      return runConfigTile(teamId.toString(), tile, startDate, endDate);
+      return runConfigTile(context, tile, startDate, endDate);
     },
   );
 }

@@ -68,12 +68,7 @@ export function registerQueryTile({
         );
       }
 
-      const result = await runConfigTile(
-        teamId.toString(),
-        tile,
-        startDate,
-        endDate,
-      );
+      const result = await runConfigTile(context, tile, startDate, endDate);
 
       // Surface non-blocking missing macro warnings alongside
       // the successful result so the agent can spot a tile that runs but
