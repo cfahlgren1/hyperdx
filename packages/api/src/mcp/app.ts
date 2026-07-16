@@ -8,7 +8,13 @@ import rateLimiter, { rateLimiterKeyGenerator } from '@/utils/rateLimiter';
 
 import { createServer } from './mcpServer';
 
-const app = createMcpExpressApp();
+// host '0.0.0.0' disables the SDK's DNS-rebinding Host-header check, which
+// would otherwise reject in-network callers (e.g. the on-call agent reaching
+// `http://app:8000/mcp` inside Compose). The check protects unauthenticated
+// localhost servers from browser-based rebinding; every request here must
+// carry a Bearer credential, which a rebinding attacker cannot obtain or
+// automatically attach.
+const app = createMcpExpressApp({ host: '0.0.0.0' });
 
 const mcpRateLimiter = rateLimiter({
   windowMs: 60 * 1000, // 1 minute

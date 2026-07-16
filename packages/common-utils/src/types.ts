@@ -638,6 +638,15 @@ export const AlertHistorySchema = z.object({
   createdAt: z.string(),
   lastValues: z.array(z.object({ startTime: z.string(), count: z.number() })),
   state: z.nativeEnum(AlertState),
+  // Present when this fire triggered an on-call agent investigation:
+  // requestedAt is set at fire time, summary/completedAt once findings land.
+  investigation: z
+    .object({
+      requestedAt: z.string(),
+      summary: z.string().optional(),
+      completedAt: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type AlertHistory = z.infer<typeof AlertHistorySchema>;

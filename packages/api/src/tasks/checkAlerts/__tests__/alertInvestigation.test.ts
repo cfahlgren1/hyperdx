@@ -178,5 +178,18 @@ describe('Alert investigation edge marking', () => {
     const marked = all.filter(h => h.investigation != null);
     expect(marked).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Third evaluation: the alert resolved and re-fired within the cooldown
+    // window (a flapper). The fresh edge is marked by the eval loop, but the
+    // provider suppresses the dispatch and clears the marker, so only
+    // actually-dispatched fires extend the cooldown.
+    const reFireMap = new Map<string, AggregatedAlertHistory>([
+      [alert.id, { state: 'OK', fired: true } as any],
+    ]);
+    await run(reFireMap);
+
+    const afterReFire = await AlertHistory.find({ alert: alert.id });
+    expect(afterReFire.filter(h => h.investigation != null)).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

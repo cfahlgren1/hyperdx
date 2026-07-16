@@ -10,3 +10,11 @@ services:
       context: .
       dockerfile: docker/hyperdx/Dockerfile
       target: prod
+      # The Dockerfile COPYs from named contexts (see the Makefile build-*
+      # targets); compose needs them declared explicitly.
+      additional_contexts:
+        clickhouse: ./docker/clickhouse
+        otel-collector: ./docker/otel-collector
+        hyperdx: ./docker/hyperdx
+        api: ./packages/api
+        app: ./packages/app

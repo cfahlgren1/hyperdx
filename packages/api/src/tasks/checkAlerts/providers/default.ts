@@ -45,7 +45,7 @@ const alertInvestigationDispatchCounter = getCounter(
   'hyperdx.alerts.investigation_dispatches',
   {
     description:
-      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched or failed).',
+      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, or cooldown).',
   },
 );
 
@@ -58,6 +58,35 @@ const MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION = 5;
 // Bounds each workflow dispatch so a stalled agent endpoint cannot accumulate
 // sockets across evaluations (and so the asyncDispose flush is bounded too).
 const INVESTIGATION_DISPATCH_TIMEOUT_MS = 10_000;
+
+// Per-alert floor on investigation frequency: a flapping alert (breaching and
+// recovering around its threshold) crosses the fire edge on every flap, which
+// would otherwise investigate each one. At most one investigation per alert
+// per this window; fires suppressed by the cooldown get their marker cleared
+// so only actually-dispatched fires extend it (a true rolling 1/hour). Fixed
+// 1h matches upstream's managed-agents dedupe window.
+const INVESTIGATION_COOLDOWN_MS = 60 * 60 * 1000;
+
+/**
+ * Remove investigation markers from histories whose dispatch was suppressed
+ * (cooldown or per-evaluation cap), so the marker only ever means "an
+ * investigation was actually requested from the agent". Best-effort.
+ */
+async function clearInvestigationMarkers(
+  ids: mongoose.Types.ObjectId[],
+): Promise<void> {
+  try {
+    await AlertHistory.updateMany(
+      { _id: { $in: ids } },
+      { $unset: { investigation: '' } },
+    );
+  } catch (error) {
+    logger.warn(
+      { ids: ids.map(String), error: String(error) },
+      'Failed to clear suppressed investigation markers',
+    );
+  }
+}
 
 async function getSavedSearchDetails(
   alert: IAlert,
@@ -434,26 +463,64 @@ export default class DefaultAlertProvider implements AlertProvider {
       )
       .map(result => result.value);
 
-    const toDispatch = requestedDocs.slice(
-      0,
-      MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
-    );
-    const dropped = requestedDocs.length - toDispatch.length;
-    if (dropped > 0) {
-      alertInvestigationDispatchCounter.add(dropped, { outcome: 'failed' });
-      logger.warn(
-        {
-          alertId,
-          dropped,
-          cap: MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+    if (requestedDocs.length > 0) {
+      // Per-alert cooldown: if any earlier fire of this alert was dispatched
+      // within the window, suppress this batch entirely and clear its markers
+      // so the suppressed fires don't extend the cooldown themselves. The
+      // cutoff is computed from the evaluation time carried on the marker
+      // (requestedAt), not wall clock, so both sides of the comparison live
+      // in the same time domain.
+      const evalTime = Math.max(
+        ...requestedDocs.map(doc => doc.investigation!.requestedAt.getTime()),
+      );
+      const cooldownActive = await AlertHistory.exists({
+        alert: new mongoose.Types.ObjectId(alertId),
+        _id: { $nin: requestedDocs.map(doc => doc._id) },
+        'investigation.requestedAt': {
+          $gt: new Date(evalTime - INVESTIGATION_COOLDOWN_MS),
         },
-        'Dropped agent investigation dispatches over the per-evaluation cap',
-      );
-    }
-    for (const doc of toDispatch) {
-      this.investigationDispatches.push(
-        this.dispatchInvestigation(alertId, doc),
-      );
+      });
+      if (cooldownActive) {
+        alertInvestigationDispatchCounter.add(requestedDocs.length, {
+          outcome: 'cooldown',
+        });
+        logger.info(
+          { alertId, suppressed: requestedDocs.length },
+          'Suppressed agent investigation dispatches within the per-alert cooldown',
+        );
+        this.investigationDispatches.push(
+          clearInvestigationMarkers(requestedDocs.map(doc => doc._id)),
+        );
+      } else {
+        const toDispatch = requestedDocs.slice(
+          0,
+          MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+        );
+        const droppedDocs = requestedDocs.slice(
+          MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+        );
+        if (droppedDocs.length > 0) {
+          alertInvestigationDispatchCounter.add(droppedDocs.length, {
+            outcome: 'failed',
+          });
+          logger.warn(
+            {
+              alertId,
+              dropped: droppedDocs.length,
+              cap: MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+            },
+            'Dropped agent investigation dispatches over the per-evaluation cap',
+          );
+          this.investigationDispatches.push(
+            clearInvestigationMarkers(droppedDocs.map(doc => doc._id)),
+          );
+        }
+        for (const doc of toDispatch) {
+          this.investigationDispatches.push(
+            this.dispatchInvestigation(alertId, doc),
+          );
+        }
+      }
     }
 
     // Determine final alert state: use successfully saved histories if any, otherwise fallback to computed state

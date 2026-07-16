@@ -17,6 +17,7 @@ type GroupedAlertHistory = {
   states: string[];
   counts: number;
   lastValues: IAlertHistory['lastValues'][];
+  investigations: (IAlertHistory['investigation'] | null)[];
 };
 
 function groupStateToOverallState(states: string[]): AlertState {
@@ -41,6 +42,9 @@ function mapGroupedHistories(
     lastValues: group.lastValues
       .flat()
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+    // Grouped alerts can carry several per-group histories in one window;
+    // surface the first investigation (dispatch is capped, usually one).
+    investigation: group.investigations.find(inv => inv != null) ?? undefined,
   }));
 }
 
@@ -78,6 +82,9 @@ export async function getRecentAlertHistories({
         },
         lastValues: {
           $push: '$lastValues',
+        },
+        investigations: {
+          $push: { $ifNull: ['$investigation', null] },
         },
       },
     },
