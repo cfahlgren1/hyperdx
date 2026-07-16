@@ -32,12 +32,14 @@ describe('Alert investigation edge marking', () => {
   const realFetch = global.fetch;
 
   beforeAll(async () => {
-    alertProvider = await loadProvider();
     server = getServer();
     await server.start();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Fresh provider per test: it caches the installation team and the
+    // per-run dispatch budget, both of which must not leak across tests.
+    alertProvider = await loadProvider();
     fetchMock = jest.fn().mockResolvedValue({ ok: true });
     global.fetch = fetchMock as any;
   });
@@ -47,6 +49,26 @@ describe('Alert investigation edge marking', () => {
     await server.clearDBs();
     jest.clearAllMocks();
   });
+
+  /** Minimal fresh-fire history object as the eval loop would produce it. */
+  const freshFireHistory = (alertId: mongoose.Types.ObjectId) => ({
+    alert: alertId,
+    createdAt: new Date(),
+    state: 'ALERT',
+    counts: 1,
+    fired: true,
+    lastValues: [{ startTime: new Date(), count: 5 }],
+    investigation: { requestedAt: new Date() },
+  });
+
+  const createTeamAlert = async (teamId: mongoose.Types.ObjectId) =>
+    Alert.create({
+      team: teamId,
+      threshold: 1,
+      thresholdType: AlertThresholdType.ABOVE,
+      interval: '1m',
+      state: 'OK',
+    });
 
   afterAll(async () => {
     await server.stop();
@@ -191,5 +213,127 @@ describe('Alert investigation edge marking', () => {
     const afterReFire = await AlertHistory.find({ alert: alert.id });
     expect(afterReFire.filter(h => h.investigation != null)).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches exactly once for concurrent evaluations of the same alert (atomic claim)', async () => {
+    const team = await createTeam({ name: 'Claim Team' });
+    const alert = await createTeamAlert(team._id);
+
+    // Two overlapping evaluators both persist a fresh-fire history and race
+    // to dispatch. The atomic claim must produce exactly one winner — not
+    // zero (mutual suppression) and not two (double dispatch).
+    await Promise.all([
+      alertProvider.updateAlertState(
+        alert._id.toString(),
+        [freshFireHistory(alert._id)],
+        [],
+      ),
+      alertProvider.updateAlertState(
+        alert._id.toString(),
+        [freshFireHistory(alert._id)],
+        [],
+      ),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('authenticates dispatches with the team agent credential', async () => {
+    const team = await createTeam({ name: 'Auth Team' });
+    const alert = await createTeamAlert(team._id);
+
+    await alertProvider.updateAlertState(
+      alert._id.toString(),
+      [freshFireHistory(alert._id)],
+      [],
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers.authorization).toMatch(/^Bearer hdx_agent_/);
+    expect(JSON.parse(init.body).alertId).toBe(alert._id.toString());
+  });
+
+  it('caps dispatches at the per-run budget across alerts', async () => {
+    const team = await createTeam({ name: 'Budget Team' });
+    const alerts = await Promise.all(
+      Array.from({ length: 12 }, () => createTeamAlert(team._id)),
+    );
+
+    for (const alert of alerts) {
+      await alertProvider.updateAlertState(
+        alert._id.toString(),
+        [freshFireHistory(alert._id)],
+        [],
+      );
+    }
+
+    // MAX_INVESTIGATION_DISPATCHES_PER_RUN = 10; the last two are suppressed
+    // and their markers cleared so they don't read as requested.
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+    const marked = await AlertHistory.countDocuments({
+      investigation: { $exists: true },
+    });
+    expect(marked).toBe(10);
+  });
+
+  it('skips dispatch for teams other than the installation team', async () => {
+    const firstTeam = await createTeam({ name: 'First Team' });
+    const otherTeamId = new mongoose.Types.ObjectId();
+    const firstAlert = await createTeamAlert(firstTeam._id);
+    const otherAlert = await createTeamAlert(otherTeamId);
+
+    await alertProvider.updateAlertState(
+      firstAlert._id.toString(),
+      [freshFireHistory(firstAlert._id)],
+      [],
+    );
+    await alertProvider.updateAlertState(
+      otherAlert._id.toString(),
+      [freshFireHistory(otherAlert._id)],
+      [],
+    );
+
+    // Only the installation (first) team dispatches; the other team's marker
+    // is cleared rather than failing the workflow auth every fire.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).alertId).toBe(
+      firstAlert._id.toString(),
+    );
+    const otherMarked = await AlertHistory.countDocuments({
+      alert: otherAlert._id,
+      investigation: { $exists: true },
+    });
+    expect(otherMarked).toBe(0);
+  });
+
+  it('releases the dispatch claim when every dispatch in the batch fails', async () => {
+    fetchMock.mockRejectedValue(new Error('agent down'));
+    const team = await createTeam({ name: 'Rollback Team' });
+    const alert = await createTeamAlert(team._id);
+
+    await alertProvider.updateAlertState(
+      alert._id.toString(),
+      [freshFireHistory(alert._id)],
+      [],
+    );
+
+    // The rollback happens on the fire-and-forget batch promise; poll briefly.
+    let released = false;
+    for (let i = 0; i < 40 && !released; i++) {
+      const doc = await Alert.findById(alert._id).select(
+        'investigationDispatchedAt',
+      );
+      released = doc?.investigationDispatchedAt == null;
+      if (!released) await new Promise(r => setTimeout(r, 50));
+    }
+    expect(released).toBe(true);
+
+    // The failed fire's marker is cleared too, so a later fire retries.
+    const marked = await AlertHistory.countDocuments({
+      alert: alert._id,
+      investigation: { $exists: true },
+    });
+    expect(marked).toBe(0);
   });
 });

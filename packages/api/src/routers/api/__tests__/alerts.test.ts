@@ -1069,4 +1069,68 @@ describe('alerts router', () => {
       );
     });
   });
+
+  describe('GET /alerts/investigations', () => {
+    const createInvestigatedHistory = async (
+      alertId: unknown,
+      summary?: string,
+    ) =>
+      AlertHistory.create({
+        alert: alertId,
+        createdAt: new Date(),
+        state: AlertState.ALERT,
+        counts: 1,
+        lastValues: [],
+        investigation: {
+          requestedAt: new Date(),
+          ...(summary && { summary, completedAt: new Date() }),
+        },
+      });
+
+    it('is served ahead of the /:id param route', async () => {
+      // A literal path that would be an invalid ObjectId for /:id.
+      const res = await agent.get('/alerts/investigations').expect(200);
+      expect(res.body.data).toEqual([]);
+    });
+
+    it('returns only completed investigations for the team, newest first', async () => {
+      const alert = await Alert.create({
+        team: team._id,
+        name: 'Investigated Alert',
+        threshold: 1,
+        thresholdType: AlertThresholdType.ABOVE,
+        interval: '1m',
+        state: AlertState.ALERT,
+      });
+      const alertId = alert._id.toString();
+
+      await createInvestigatedHistory(alertId, 'older finding');
+      await new Promise(r => setTimeout(r, 5));
+      await createInvestigatedHistory(alertId, 'newer finding');
+      // Pending marker without a summary must not appear.
+      await createInvestigatedHistory(alertId);
+
+      const res = await agent.get('/alerts/investigations').expect(200);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.data[0].investigation.summary).toBe('newer finding');
+      expect(res.body.data[1].investigation.summary).toBe('older finding');
+      expect(res.body.data[0].alertId).toBe(alertId);
+      expect(res.body.data[0].alertName).toBeTruthy();
+    });
+
+    it('does not return other teams investigations', async () => {
+      // An alert + investigated history owned by a different team.
+      const foreignAlert = await Alert.create({
+        team: randomMongoId(),
+        threshold: 1,
+        thresholdType: AlertThresholdType.ABOVE,
+        interval: '1m',
+        state: AlertState.ALERT,
+      });
+      await createInvestigatedHistory(foreignAlert._id, 'foreign secret');
+
+      const res = await agent.get('/alerts/investigations').expect(200);
+      expect(res.body.data).toEqual([]);
+    });
+  });
 });

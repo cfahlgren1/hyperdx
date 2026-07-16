@@ -10,6 +10,7 @@ import { URLSearchParams } from 'url';
 import * as config from '@/config';
 import { ensureAgentCredential } from '@/controllers/agentInstallation';
 import { ALERT_HISTORY_QUERY_CONCURRENCY } from '@/controllers/alertHistory';
+import { getAllTeams } from '@/controllers/team';
 import { LOCAL_APP_TEAM } from '@/controllers/team';
 import { connectDB, mongooseConnection, ObjectId } from '@/models';
 import Alert, {
@@ -46,7 +47,7 @@ const alertInvestigationDispatchCounter = getCounter(
   'hyperdx.alerts.investigation_dispatches',
   {
     description:
-      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, cooldown, or budget).',
+      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, cooldown, budget, or skipped_team).',
   },
 );
 
@@ -335,6 +336,10 @@ export default class DefaultAlertProvider implements AlertProvider {
   // MAX_INVESTIGATION_DISPATCHES_PER_RUN).
   private investigationBudget = MAX_INVESTIGATION_DISPATCHES_PER_RUN;
 
+  // The team whose credential the agent holds (the first team — matching the
+  // provisioning endpoint). Cached on first dispatch; null when no team exists.
+  private installationTeamId: string | null | undefined = undefined;
+
   async init() {
     await Promise.all([connectDB()]);
   }
@@ -535,6 +540,28 @@ export default class DefaultAlertProvider implements AlertProvider {
       return;
     }
 
+    // The agent holds the first team's credential (see the provisioning
+    // endpoint), so investigations are limited to that team; dispatching for
+    // any other team would just fail the workflow's auth check every fire.
+    // Make the single-team assumption explicit and observable instead.
+    if (this.installationTeamId === undefined) {
+      const [firstTeam] = await getAllTeams(['_id']);
+      this.installationTeamId = firstTeam?._id?.toString() ?? null;
+    }
+    const alertDoc = await Alert.findById(alertId).select('team');
+    const alertTeamId = alertDoc?.team?.toString();
+    if (!alertTeamId || alertTeamId !== this.installationTeamId) {
+      alertInvestigationDispatchCounter.add(requestedDocs.length, {
+        outcome: 'skipped_team',
+      });
+      logger.info(
+        { alertId, suppressed: requestedDocs.length },
+        'Skipped agent investigation dispatches for a team without the agent credential',
+      );
+      await clearAll(requestedDocs);
+      return;
+    }
+
     // The claim compares in evaluation-time (carried on the marker), not wall
     // clock, so tests and replayed evaluations behave consistently.
     const evalTime = new Date(
@@ -591,9 +618,7 @@ export default class DefaultAlertProvider implements AlertProvider {
 
     // The agent authenticates dispatches against its own credential, so forged
     // requests from other processes on the network cannot start paid runs.
-    const credential = await ensureAgentCredential(
-      claimed.team?.toString() ?? '',
-    ).catch(error => {
+    const credential = await ensureAgentCredential(alertTeamId).catch(error => {
       logger.warn(
         { alertId, error: String(error) },
         'Failed to resolve agent credential for investigation dispatch',

@@ -8,13 +8,34 @@ import rateLimiter, { rateLimiterKeyGenerator } from '@/utils/rateLimiter';
 
 import { createServer } from './mcpServer';
 
-// host '0.0.0.0' disables the SDK's DNS-rebinding Host-header check, which
-// would otherwise reject in-network callers (e.g. the on-call agent reaching
-// `http://app:8000/mcp` inside Compose). The check protects unauthenticated
-// localhost servers from browser-based rebinding; every request here must
-// carry a Bearer credential, which a rebinding attacker cannot obtain or
-// automatically attach.
-const app = createMcpExpressApp({ host: '0.0.0.0' });
+// The SDK applies localhost-only DNS-rebinding protection by default, which
+// rejects any request whose Host header isn't localhost — including in-network
+// callers like the on-call agent reaching `http://app:8000/mcp` inside
+// Compose. Keep the protection but allowlist the hosts a deployment actually
+// serves: localhost, the Compose service name, the configured frontend, and
+// any extra hosts from MCP_ALLOWED_HOSTS (comma-separated, for other
+// topologies). Matching is port-agnostic, so bare hostnames suffice. This
+// mirrors upstream's buildAllowedHosts shape (PR #2646) to keep merges
+// additive.
+const buildAllowedHosts = (urls: (string | undefined)[]): string[] => {
+  const hosts = ['localhost', '127.0.0.1', '[::1]', 'app'];
+  for (const extra of (process.env.MCP_ALLOWED_HOSTS ?? '').split(',')) {
+    if (extra.trim()) hosts.push(extra.trim());
+  }
+  for (const url of urls) {
+    if (!url) continue;
+    try {
+      hosts.push(new URL(url).hostname);
+    } catch {
+      // ignore a malformed URL — it just won't be allowlisted
+    }
+  }
+  return hosts;
+};
+
+const app = createMcpExpressApp({
+  allowedHosts: buildAllowedHosts([process.env.FRONTEND_URL]),
+});
 
 const mcpRateLimiter = rateLimiter({
   windowMs: 60 * 1000, // 1 minute
