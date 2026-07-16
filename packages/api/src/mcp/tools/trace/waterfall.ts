@@ -323,6 +323,11 @@ export function registerTraceWaterfall({
             config: pickConfig as ChartConfigWithDateRange,
             metadata,
             querySettings: source.querySettings,
+            opts: {
+              clickhouse_settings: {
+                log_comment: getMcpLogComment(context),
+              },
+            },
           })) as { data?: Array<Record<string, unknown>> };
         } catch (e) {
           return clickHouseErrorResult(e, 'Failed to pick a trace');

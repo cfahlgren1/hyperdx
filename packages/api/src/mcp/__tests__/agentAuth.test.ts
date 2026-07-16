@@ -1,9 +1,9 @@
 import request from 'supertest';
 
-import * as config from '@/config';
 import { ensureAgentCredential } from '@/controllers/agentInstallation';
 import { getLoggedInAgent, getServer } from '@/fixtures';
 import AgentInstallation from '@/models/agentInstallation';
+import { createAgentCredentialApp } from '@/routers/agentCredential';
 
 const MCP_HEADERS = {
   'content-type': 'application/json',
@@ -67,38 +67,38 @@ describe('agent credential auth', () => {
     });
   });
 
-  describe('GET /agent/credential', () => {
-    it('is disabled by default', async () => {
+  describe('GET /agent/credential (internal listener)', () => {
+    const credentialApp = createAgentCredentialApp();
+
+    it('is not served by the public API', async () => {
       await getLoggedInAgent(server);
       await request(server.getHttpServer())
         .get('/agent/credential')
         .expect(404);
     });
 
+    it('rejects requests without the provisioning header (SSRF guard)', async () => {
+      await getLoggedInAgent(server);
+      await request(credentialApp).get('/agent/credential').expect(403);
+    });
+
     it('returns 409 before a team exists', async () => {
-      jest.replaceProperty(
-        config,
-        'AGENT_CREDENTIAL_ENDPOINT_ENABLED' as never,
-        true as never,
-      );
-      await request(server.getHttpServer())
+      await request(credentialApp)
         .get('/agent/credential')
+        .set('x-hyperdx-agent-provision', '1')
         .expect(409);
     });
 
     it('serves an idempotent credential once a team exists', async () => {
-      jest.replaceProperty(
-        config,
-        'AGENT_CREDENTIAL_ENDPOINT_ENABLED' as never,
-        true as never,
-      );
       await getLoggedInAgent(server);
 
-      const first = await request(server.getHttpServer())
+      const first = await request(credentialApp)
         .get('/agent/credential')
+        .set('x-hyperdx-agent-provision', '1')
         .expect(200);
-      const second = await request(server.getHttpServer())
+      const second = await request(credentialApp)
         .get('/agent/credential')
+        .set('x-hyperdx-agent-provision', '1')
         .expect(200);
 
       expect(first.body.credential).toMatch(/^hdx_agent_/);

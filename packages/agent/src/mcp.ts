@@ -3,7 +3,9 @@ import { connectMcpServer, type ToolDefinition } from '@flue/runtime';
 const MCP_URL =
   process.env.HYPERDX_MCP_URL?.trim() || 'http://localhost:8000/mcp';
 
-const CREDENTIAL_URL = new URL('/agent/credential', MCP_URL).toString();
+const CREDENTIAL_URL =
+  process.env.HYPERDX_AGENT_CREDENTIAL_URL?.trim() ||
+  'http://localhost:8001/agent/credential';
 const CREDENTIAL_FETCH_ATTEMPTS = 24;
 const CREDENTIAL_FETCH_DELAY_MS = 5_000;
 
@@ -22,7 +24,11 @@ async function resolveCredential(): Promise<string> {
   for (let attempt = 1; attempt <= CREDENTIAL_FETCH_ATTEMPTS; attempt++) {
     const progress = `(attempt ${attempt}/${CREDENTIAL_FETCH_ATTEMPTS})`;
     try {
-      const response = await fetch(CREDENTIAL_URL);
+      // The header is what distinguishes this real client from a forged
+      // SSRF request; the API rejects provisioning calls that lack it.
+      const response = await fetch(CREDENTIAL_URL, {
+        headers: { 'x-hyperdx-agent-provision': '1' },
+      });
       if (response.ok) {
         const { credential } = (await response.json()) as {
           credential?: string;
