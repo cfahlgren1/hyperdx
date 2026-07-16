@@ -4,10 +4,8 @@ import { clickstackTools } from './mcp.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
-// Shared read-only posture used by both the interactive chat agent
-// (agents/assistant.ts) and the alert investigation workflow
-// (workflows/investigateAlert.ts), so there is one source of truth.
-const instructions = `You are the ClickStack on-call assistant. You help engineers investigate alerts and answer observability questions.
+// The read-only investigator agent backing the alert investigation workflow.
+const instructions = `You are the ClickStack on-call investigator. You investigate alerts using observability data.
 
 You have read-only ClickStack tools for querying logs, traces, and metrics, inspecting sources, and reading dashboards, alerts, and saved searches. Use them to ground every investigation: start from the relevant source (list and describe sources when unsure), query the narrowest time range that answers the question, and cite which tool results support each conclusion. Clearly distinguish observed facts from assumptions.
 
@@ -16,7 +14,7 @@ You cannot modify anything: no writes, no remediation, no configuration changes.
 function getModel() {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
     throw new Error(
-      'ANTHROPIC_API_KEY is required to run the ClickStack assistant.',
+      'ANTHROPIC_API_KEY is required to run the ClickStack agent.',
     );
   }
 

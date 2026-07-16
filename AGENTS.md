@@ -32,8 +32,8 @@ This is a **monorepo** with seven packages:
   [`README.md`](packages/hdx-eval/README.md) for setup and usage, and
   [`agent_docs/evals.md`](agent_docs/evals.md) for the dual-slot A/B
   comparison workflow.
-- `packages/agent` - Optional AI on-call agent sidecar (Flue framework). Chat
-  assistant plus automatic alert investigations via the API's read-only MCP
+- `packages/agent` - Optional AI on-call agent sidecar (Flue framework) that
+  automatically investigates firing alerts via the API's read-only MCP
   profile; opt-in Docker Compose `agent` profile. See its
   [`README.md`](packages/agent/README.md) for setup, env vars, and the
   investigation flow.

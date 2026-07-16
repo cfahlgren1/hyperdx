@@ -1,8 +1,8 @@
 # @hyperdx/agent
 
 Optional AI on-call agent for self-hosted ClickStack, built on
-[Flue](https://flue.dev). It takes the first pass at alerts and observability
-questions, investigating with telemetry context and reporting findings, so
+[Flue](https://flue.dev). When an alert fires, it takes the first pass:
+investigating the underlying telemetry and reporting a root-cause summary, so
 on-call starts with answers instead of raw signals.
 
 ## Usage
@@ -14,25 +14,29 @@ start the dev server from the repository root:
 yarn workspace @hyperdx/agent dev
 ```
 
-Chat with the assistant. The trailing path segment is the conversation ID, so
-reusing it continues the conversation:
+The agent exposes a single workflow, `POST /workflows/investigateAlert`,
+authenticated with the agent's own ClickStack credential — pass whatever the
+agent resolved at boot: your `HYPERDX_MCP_ACCESS_KEY` in local dev, or the
+provisioned credential from `GET http://localhost:8001/agent/credential`
+(send the `x-hyperdx-agent-provision: 1` header) in Compose:
 
 ```bash
-curl -X POST 'http://127.0.0.1:4010/agents/assistant/my-chat?wait=result' \
+curl -X POST 'http://127.0.0.1:4010/workflows/investigateAlert?wait=result' \
   -H 'content-type: application/json' \
-  -d '{"message":"Explain what an SRE should check after a latency alert."}'
+  -H "authorization: Bearer $HYPERDX_MCP_ACCESS_KEY" \
+  -d '{"alertHistoryId":"<id>","alertId":"<id>"}'
 ```
 
 Override the model with `AI_MODEL_NAME` (default `claude-sonnet-5`),
 and point `ANTHROPIC_BASE_URL` at any Anthropic-compatible endpoint to use other
 models, like [OpenRouter](https://openrouter.ai/docs) or the
 [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/coding-agents/claude-code).
-Conversations are stored in a SQLite file under `.volumes/agent/` (override with
+Workflow runs are stored in a SQLite file under `.volumes/agent/` (override with
 `FLUE_DB_PATH`).
 
 ## ClickStack tools
 
-The assistant queries ClickStack through the API's MCP server, which serves
+The agent queries ClickStack through the API's MCP server, which serves
 agent credentials a read-only tool profile (search, SQL, traces,
 dashboards/alerts reads, no writes). In Docker Compose the agent provisions
 its credential itself; for local dev set `HYPERDX_MCP_ACCESS_KEY` to a
@@ -96,15 +100,13 @@ team's alerts can be investigated.
 This is a standard [Flue](https://flue.dev) app: everything is discovered from
 `src/` conventions and compiled into a single server by the `flue` CLI.
 
-- `src/agents/assistant.ts`: the chat agent; the filename is the name, so it's
-  served at `/agents/assistant/:id`
 - `src/workflows/investigateAlert.ts`: the alert-investigation workflow, served
   at `/workflows/investigateAlert` (requires the agent credential as a Bearer
   token)
-- `src/investigator.ts`: the shared read-only agent definition (model, tools,
-  instructions) used by both the assistant and the workflow
+- `src/investigator.ts`: the read-only agent definition (model, tools,
+  instructions) the workflow runs on
 - `src/mcp.ts`: credential resolution + MCP connection (the ClickStack tools)
-- `src/db.ts`: SQLite persistence for conversations and workflow runs
+- `src/db.ts`: SQLite persistence for workflow runs
 - `src/app.ts`: custom routes (`/health`) composed with Flue's
 
 Useful CLI commands:
@@ -112,8 +114,7 @@ Useful CLI commands:
 ```bash
 yarn workspace @hyperdx/agent dev     # serve + watch (flue dev)
 yarn workspace @hyperdx/agent build   # compile to dist/server.mjs (flue build)
-yarn workspace @hyperdx/agent flue run assistant --input '{"message":"Say hi"}'  # one-shot prompt, no server needed
-yarn workspace @hyperdx/agent flue docs                                          # browse Flue's bundled docs
+yarn workspace @hyperdx/agent flue docs   # browse Flue's bundled docs
 ```
 
 ## Docker Compose

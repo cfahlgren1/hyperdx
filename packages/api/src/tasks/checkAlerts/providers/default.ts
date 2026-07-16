@@ -327,7 +327,7 @@ async function loadAlert(
 export default class DefaultAlertProvider implements AlertProvider {
   // In-flight investigation dispatches. Fire-and-forget during evaluation, but
   // flushed in asyncDispose: externally-scheduled task runs process.exit(0) as
-  // soon as the task resolves (tasks/index.ts), which would otherwise kill the
+  // soon as the task resolves, which would otherwise kill the
   // requests mid-flight. Each dispatch is bounded by an AbortSignal timeout,
   // so the flush is too.
   private investigationDispatches: Promise<void>[] = [];
@@ -540,8 +540,8 @@ export default class DefaultAlertProvider implements AlertProvider {
       return;
     }
 
-    // The agent holds the first team's credential (see the provisioning
-    // endpoint), so investigations are limited to that team; dispatching for
+    // The agent holds the first team's credential, so investigations are
+    // limited to that team; dispatching for
     // any other team would just fail the workflow's auth check every fire.
     // Make the single-team assumption explicit and observable instead.
     if (this.installationTeamId === undefined) {

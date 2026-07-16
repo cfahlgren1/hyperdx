@@ -104,5 +104,5 @@ const clickstack = await connectClickstack();
 export const clickstackTools = clickstack.tools;
 
 // The same read-only credential the agent uses for MCP also authenticates its
-// investigation write-back to the ClickStack API (see workflows/investigateAlert.ts).
+// investigation write-back to the ClickStack API.
 export const clickstackCredential = clickstack.credential;

@@ -1094,7 +1094,7 @@ export const processAlert = async (
     // markers accumulate. Silenced alerts are skipped entirely: the user asked
     // not to be bothered, so we don't spend investigation tokens either.
     // Dispatch itself happens at persistence time, where the AlertHistory _id
-    // exists (see DefaultAlertProvider.updateAlertState).
+    // exists.
     const markInvestigationIfFreshFire = (
       history: IAlertHistory,
       previous: AggregatedAlertHistory | undefined,
