@@ -18,14 +18,6 @@ const CREDENTIAL_FETCH_DELAY_MS = 5_000;
 async function resolveCredential(): Promise<string> {
   const override = process.env.HYPERDX_MCP_ACCESS_KEY?.trim();
   if (override) {
-    if (!override.startsWith('hdx_agent_')) {
-      // A personal access key gets the FULL MCP tool surface (including
-      // writes), and investigations run autonomously on untrusted telemetry.
-      // Only the provisioned agent credential is server-enforced read-only.
-      console.warn(
-        'HYPERDX_MCP_ACCESS_KEY is not an agent credential: the assistant and alert investigations will run with this key’s full (write-capable) tool surface. Unset it to use the provisioned read-only agent credential.',
-      );
-    }
     return override;
   }
 
@@ -69,6 +61,13 @@ async function resolveCredential(): Promise<string> {
   return process.exit(1);
 }
 
+// Tool-name patterns that mutate ClickStack state. The provisioned agent
+// credential is server-enforced read-only, so this list never matches for it;
+// it only applies when HYPERDX_MCP_ACCESS_KEY is a personal access key, whose
+// full tool surface would otherwise hand write access to an autonomous agent
+// reading untrusted telemetry.
+const WRITE_TOOL_PATTERN = /save|delete|patch|create|update/i;
+
 async function connectClickstack(): Promise<{
   credential: string;
   tools: ToolDefinition[];
@@ -82,7 +81,22 @@ async function connectClickstack(): Promise<{
     headers: { authorization: `Bearer ${credential}` },
   });
 
-  return { credential, tools: connection.tools };
+  if (credential.startsWith('hdx_agent_')) {
+    return { credential, tools: connection.tools };
+  }
+
+  // Personal-key override: enforce read-only client-side by dropping mutation
+  // tools, since the server grants this key its full surface.
+  const tools = connection.tools.filter(
+    tool => !WRITE_TOOL_PATTERN.test(tool.name),
+  );
+  const dropped = connection.tools.length - tools.length;
+  if (dropped > 0) {
+    console.warn(
+      `HYPERDX_MCP_ACCESS_KEY is not an agent credential: dropped ${dropped} write-capable tools to keep the agent read-only. Unset it to use the provisioned agent credential.`,
+    );
+  }
+  return { credential, tools };
 }
 
 const clickstack = await connectClickstack();

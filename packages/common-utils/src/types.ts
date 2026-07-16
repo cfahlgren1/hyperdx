@@ -2123,6 +2123,39 @@ export const AlertsApiResponseSchema = z.object({
 
 export type AlertsApiResponse = z.infer<typeof AlertsApiResponseSchema>;
 
+// One completed agent investigation, joined with enough of its alert to render
+// a feed entry. Served by GET /alerts/investigations independently of the
+// rolling per-alert history window, so summaries stay reachable after the
+// chart history scrolls past them.
+export const AlertInvestigationItemSchema = z.object({
+  alertId: z.string(),
+  alertName: z.string(),
+  savedSearchId: z.string().optional(),
+  dashboardId: z.string().optional(),
+  tileId: z.string().optional(),
+  createdAt: z.string(),
+  state: z.nativeEnum(AlertState),
+  counts: z.number(),
+  group: z.string().optional(),
+  investigation: z.object({
+    requestedAt: z.string(),
+    summary: z.string(),
+    completedAt: z.string().optional(),
+  }),
+});
+
+export type AlertInvestigationItem = z.infer<
+  typeof AlertInvestigationItemSchema
+>;
+
+export const AlertInvestigationsApiResponseSchema = z.object({
+  data: z.array(AlertInvestigationItemSchema),
+});
+
+export type AlertInvestigationsApiResponse = z.infer<
+  typeof AlertInvestigationsApiResponseSchema
+>;
+
 export const AlertApiResponseSchema = z.object({
   data: AlertsPageItemSchema,
 });

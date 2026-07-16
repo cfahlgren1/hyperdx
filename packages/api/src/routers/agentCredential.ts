@@ -74,13 +74,20 @@ export function createAgentCredentialApp() {
         return res.sendStatus(401);
       }
 
-      const { alertHistoryId, summary } = req.body ?? {};
-      if (typeof alertHistoryId !== 'string' || typeof summary !== 'string') {
+      const { alertHistoryId, alertId, summary } = req.body ?? {};
+      if (
+        typeof alertHistoryId !== 'string' ||
+        typeof alertId !== 'string' ||
+        typeof summary !== 'string'
+      ) {
         return res
           .status(400)
-          .json({ error: 'alertHistoryId and summary are required' });
+          .json({ error: 'alertHistoryId, alertId, and summary are required' });
       }
-      if (!mongoose.isValidObjectId(alertHistoryId)) {
+      if (
+        !mongoose.isValidObjectId(alertHistoryId) ||
+        !mongoose.isValidObjectId(alertId)
+      ) {
         return res.sendStatus(404);
       }
 
@@ -88,6 +95,13 @@ export function createAgentCredentialApp() {
         await AlertHistory.findById(alertHistoryId).select('alert');
       if (!history) {
         return res.sendStatus(404);
+      }
+
+      // The history must belong to the alert that was investigated, so a
+      // mismatched pair cannot graft one alert's findings onto another's
+      // record.
+      if (history.alert?.toString() !== alertId) {
+        return res.sendStatus(409);
       }
 
       // Confirm the credential's team owns this alert before writing. A 403

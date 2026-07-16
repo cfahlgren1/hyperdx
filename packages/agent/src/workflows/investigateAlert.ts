@@ -11,10 +11,12 @@ const WRITEBACK_URL =
 /**
  * Post the findings summary back to the ClickStack API, authenticated with the
  * agent's own credential. The API stores it on the AlertHistory doc after
- * confirming the credential's team owns the alert.
+ * confirming the credential's team owns the alert AND that the history record
+ * belongs to the investigated alert.
  */
 async function postFindings(
   alertHistoryId: string,
+  alertId: string,
   summary: string,
 ): Promise<void> {
   const response = await fetch(WRITEBACK_URL, {
@@ -23,7 +25,7 @@ async function postFindings(
       'content-type': 'application/json',
       authorization: `Bearer ${clickstackCredential}`,
     },
-    body: JSON.stringify({ alertHistoryId, summary }),
+    body: JSON.stringify({ alertHistoryId, alertId, summary }),
     // Bound the request so a stalled API cannot pin the workflow run open.
     signal: AbortSignal.timeout(30_000),
   });
@@ -37,9 +39,16 @@ async function postFindings(
 
 // Exposes POST /workflows/investigateAlert over HTTP. Without this export the
 // production build (flue build) does not serve the workflow at all — only
-// `flue dev` exposes route-less workflows. Unauthenticated; Compose binds the
-// port to loopback and the internal network.
-export const route: WorkflowRouteHandler = async (_c, next) => next();
+// `flue dev` exposes route-less workflows. Requires the dispatching API to
+// present the agent's own credential, so other processes that can reach the
+// port cannot start paid investigation runs.
+export const route: WorkflowRouteHandler = async (c, next) => {
+  const authorization = c.req.header('authorization');
+  if (authorization !== `Bearer ${clickstackCredential}`) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  return next();
+};
 
 // Fired by the ClickStack API on a fresh alert fire. The API passes only
 // identifiers; the agent looks up the alert definition and telemetry itself
@@ -87,7 +96,7 @@ export default defineWorkflow({
     const response = await session.prompt(buildPrompt(ctx.input));
     const summary = response.text;
 
-    await postFindings(ctx.input.alertHistoryId, summary);
+    await postFindings(ctx.input.alertHistoryId, ctx.input.alertId, summary);
 
     return { summary };
   },

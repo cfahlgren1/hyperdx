@@ -2,7 +2,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { formatDistanceToNowStrict } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
-import { AlertHistory } from '@hyperdx/common-utils/dist/types';
+import { AlertInvestigationItem } from '@hyperdx/common-utils/dist/types';
 import {
   Badge,
   Box,
@@ -16,29 +16,15 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconReportSearch } from '@tabler/icons-react';
 
-import type { AlertsPageItem } from '@/types';
+import api from '@/api';
 import { FormatTime } from '@/useFormatTime';
 
-type FeedEntry = {
-  alert: AlertsPageItem;
-  history: AlertHistory;
-  investigation: NonNullable<AlertHistory['investigation']> & {
-    summary: string;
-  };
-};
-
-function getAlertName(alert: AlertsPageItem): string {
-  if (alert.savedSearch?.name) return alert.savedSearch.name;
-  if (alert.dashboard?.name) return alert.dashboard.name;
-  return alert.name || 'Alert';
-}
-
-function getAlertUrl(alert: AlertsPageItem): string {
-  if (alert.dashboardId) {
-    return `/dashboards/${alert.dashboardId}?highlightedTileId=${alert.tileId}`;
+function getAlertUrl(item: AlertInvestigationItem): string {
+  if (item.dashboardId) {
+    return `/dashboards/${item.dashboardId}?highlightedTileId=${item.tileId}`;
   }
-  if (alert.savedSearchId) {
-    return `/search/${alert.savedSearchId}`;
+  if (item.savedSearchId) {
+    return `/search/${item.savedSearchId}`;
   }
   return '/alerts';
 }
@@ -61,21 +47,21 @@ function extractGist(summary: string): string {
   return line ?? summary.slice(0, 160);
 }
 
-function investigationDuration(entry: FeedEntry): string | null {
-  if (!entry.investigation.completedAt) return null;
+function investigationDuration(item: AlertInvestigationItem): string | null {
+  if (!item.investigation.completedAt) return null;
   const ms =
-    new Date(entry.investigation.completedAt).getTime() -
-    new Date(entry.investigation.requestedAt).getTime();
+    new Date(item.investigation.completedAt).getTime() -
+    new Date(item.investigation.requestedAt).getTime();
   if (ms <= 0) return null;
   return ms < 60_000
     ? `${Math.round(ms / 1000)}s`
     : `${Math.round(ms / 60_000)}m`;
 }
 
-function InvestigationCard({ entry }: { entry: FeedEntry }) {
+function InvestigationCard({ item }: { item: AlertInvestigationItem }) {
   const [opened, { toggle }] = useDisclosure(false);
-  const duration = investigationDuration(entry);
-  const firedAt = new Date(entry.history.createdAt);
+  const duration = investigationDuration(item);
+  const firedAt = new Date(item.createdAt);
 
   return (
     <Paper withBorder p="md" radius="md">
@@ -94,15 +80,20 @@ function InvestigationCard({ entry }: { entry: FeedEntry }) {
                 Fired
               </Badge>
               <Text size="sm" fw={600} truncate>
-                {getAlertName(entry.alert)}
+                {item.alertName}
               </Text>
+              {item.group && (
+                <Badge variant="light" color="gray" size="xs">
+                  {item.group}
+                </Badge>
+              )}
               <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
                 <FormatTime value={firedAt} />
               </Text>
             </Group>
             {!opened && (
               <Text size="sm" c="gray.4" lineClamp={2}>
-                {extractGist(entry.investigation.summary)}
+                {extractGist(item.investigation.summary)}
               </Text>
             )}
           </Stack>
@@ -133,13 +124,10 @@ function InvestigationCard({ entry }: { entry: FeedEntry }) {
           }}
           className="hdx-markdown"
         >
-          <ReactMarkdown>{entry.investigation.summary}</ReactMarkdown>
+          <ReactMarkdown>{item.investigation.summary}</ReactMarkdown>
         </Box>
         <Group justify="flex-end" mt="xs">
-          <Link
-            href={getAlertUrl(entry.alert)}
-            className="text-decoration-none fs-8"
-          >
+          <Link href={getAlertUrl(item)} className="text-decoration-none fs-8">
             View source data →
           </Link>
         </Group>
@@ -149,29 +137,20 @@ function InvestigationCard({ entry }: { entry: FeedEntry }) {
 }
 
 // Chronological feed of AI investigation reports across all alerts, newest
-// first. Derived entirely from the alerts response (histories already carry
-// `investigation`), so it needs no extra API call.
-export function InvestigationsFeed({ alerts }: { alerts: AlertsPageItem[] }) {
-  const entries = React.useMemo<FeedEntry[]>(
-    () =>
-      alerts
-        .flatMap(alert =>
-          alert.history
-            .filter(h => h.investigation?.summary)
-            .map(history => ({
-              alert,
-              history,
-              investigation:
-                history.investigation as FeedEntry['investigation'],
-            })),
-        )
-        .sort(
-          (a, b) =>
-            new Date(b.history.createdAt).getTime() -
-            new Date(a.history.createdAt).getTime(),
-        ),
-    [alerts],
-  );
+// first. Backed by GET /alerts/investigations, which queries investigations
+// directly instead of the rolling per-alert history window, so summaries stay
+// reachable after they scroll out of the 20-entry chart history.
+export function InvestigationsFeed() {
+  const { data, isLoading } = api.useAlertInvestigations();
+  const entries = data?.data ?? [];
+
+  if (isLoading) {
+    return (
+      <Text size="sm" c="dimmed" ta="center" py={40}>
+        Loading...
+      </Text>
+    );
+  }
 
   if (entries.length === 0) {
     return (
@@ -191,8 +170,8 @@ export function InvestigationsFeed({ alerts }: { alerts: AlertsPageItem[] }) {
 
   return (
     <Stack gap="sm" mt="md">
-      {entries.map((entry, i) => (
-        <InvestigationCard key={i} entry={entry} />
+      {entries.map((item, i) => (
+        <InvestigationCard key={i} item={item} />
       ))}
     </Stack>
   );

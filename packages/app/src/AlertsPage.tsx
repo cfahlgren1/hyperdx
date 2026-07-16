@@ -336,15 +336,8 @@ export default function AlertsPage() {
   const [creatorFilter, setCreatorFilter] = useQueryState('creator');
   const [tab, setTab] = useQueryState('tab');
 
-  const investigationCount = React.useMemo(
-    () =>
-      alerts.reduce(
-        (count, alert) =>
-          count + alert.history.filter(h => h.investigation?.summary).length,
-        0,
-      ),
-    [alerts],
-  );
+  const { data: investigationsData } = api.useAlertInvestigations();
+  const investigationCount = investigationsData?.data?.length ?? 0;
 
   const allTags = React.useMemo(() => {
     const tags = new Set<string>();
@@ -426,7 +419,7 @@ export default function AlertsPage() {
               </Tabs.List>
             </Tabs>
             {(tab ?? 'alerts') === 'investigations' ? (
-              <InvestigationsFeed alerts={alerts} />
+              <InvestigationsFeed />
             ) : (
               <>
                 <Alert

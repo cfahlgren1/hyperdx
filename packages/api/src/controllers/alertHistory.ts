@@ -6,7 +6,7 @@ import {
 } from '@hyperdx/common-utils/dist/types';
 import { ObjectId } from 'mongodb';
 
-import { AlertState } from '@/models/alert';
+import Alert, { AlertState } from '@/models/alert';
 import AlertHistory, { IAlertHistory } from '@/models/alertHistory';
 
 // Max parallel per-alert queries to avoid overwhelming the DB connection pool
@@ -43,8 +43,12 @@ function mapGroupedHistories(
       .flat()
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
     // Grouped alerts can carry several per-group histories in one window;
-    // surface the first investigation (dispatch is capped, usually one).
-    investigation: group.investigations.find(inv => inv != null) ?? undefined,
+    // prefer a completed investigation (one with findings) over a marker that
+    // is still awaiting its summary.
+    investigation:
+      group.investigations.find(inv => inv?.summary != null) ??
+      group.investigations.find(inv => inv != null) ??
+      undefined,
   }));
 }
 
@@ -136,6 +140,80 @@ export async function getRecentAlertHistoriesBatch(
       (e): e is [string, Omit<IAlertHistory, 'alert'>[]] => e !== undefined,
     ),
   );
+}
+
+export type RecentInvestigation = {
+  alertId: string;
+  alertName: string;
+  savedSearchId?: string;
+  dashboardId?: string;
+  tileId?: string;
+  createdAt: Date;
+  state: AlertState;
+  counts: number;
+  group?: string;
+  investigation: NonNullable<IAlertHistory['investigation']> & {
+    summary: string;
+  };
+};
+
+/**
+ * Recent completed agent investigations across all of a team's alerts, newest
+ * first. Queried directly (not via the rolling per-alert history window) so a
+ * summary stays reachable after its evaluation window scrolls out of the
+ * 20-entry chart history.
+ */
+export async function getRecentInvestigations(
+  teamId: ObjectId | string,
+  limit = 50,
+): Promise<RecentInvestigation[]> {
+  const alerts = await Alert.find({ team: new ObjectId(teamId) })
+    .select('name savedSearch dashboard tileId')
+    .populate<{ savedSearch?: { _id: ObjectId; name: string } }>(
+      'savedSearch',
+      'name',
+    )
+    .populate<{ dashboard?: { _id: ObjectId; name: string } }>(
+      'dashboard',
+      'name',
+    );
+  if (alerts.length === 0) {
+    return [];
+  }
+  const alertsById = new Map(alerts.map(a => [a._id.toString(), a]));
+
+  const histories = await AlertHistory.find({
+    alert: { $in: alerts.map(a => a._id) },
+    'investigation.summary': { $exists: true },
+  })
+    .sort({ createdAt: -1 })
+    .limit(limit);
+
+  return histories.flatMap(history => {
+    const alert = alertsById.get(history.alert.toString());
+    if (!alert || !history.investigation?.summary) {
+      return [];
+    }
+    return [
+      {
+        alertId: alert._id.toString(),
+        alertName:
+          alert.savedSearch?.name ??
+          alert.dashboard?.name ??
+          alert.name ??
+          'Alert',
+        savedSearchId: alert.savedSearch?._id?.toString(),
+        dashboardId: alert.dashboard?._id?.toString(),
+        tileId: alert.tileId ?? undefined,
+        createdAt: history.createdAt,
+        state: history.state,
+        counts: history.counts,
+        group: history.group,
+        investigation:
+          history.investigation as RecentInvestigation['investigation'],
+      },
+    ];
+  });
 }
 
 /**

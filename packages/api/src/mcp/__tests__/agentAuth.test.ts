@@ -187,6 +187,7 @@ describe('agent credential auth', () => {
         .set('Authorization', `Bearer ${credential}`)
         .send({
           alertHistoryId: history._id.toString(),
+          alertId: history.alert.toString(),
           summary: 'root cause: X',
         })
         .expect(204);
@@ -201,6 +202,7 @@ describe('agent credential auth', () => {
         .set('Authorization', `Bearer ${credential}`)
         .send({
           alertHistoryId: history._id.toString(),
+          alertId: history.alert.toString(),
           summary: 'overwrite attempt',
         })
         .expect(409);
@@ -215,6 +217,7 @@ describe('agent credential auth', () => {
         .set('Authorization', `Bearer ${user.accessKey}`)
         .send({
           alertHistoryId: history._id.toString(),
+          alertId: history.alert.toString(),
           summary: 'via access key',
         })
         .expect(204);
@@ -232,7 +235,11 @@ describe('agent credential auth', () => {
       await request(credentialApp)
         .post('/agent/investigations')
         .set('Authorization', `Bearer ${credential}`)
-        .send({ alertHistoryId: history._id.toString(), summary: 'spam' })
+        .send({
+          alertHistoryId: history._id.toString(),
+          alertId: history.alert.toString(),
+          summary: 'spam',
+        })
         .expect(409);
     });
 
@@ -241,6 +248,7 @@ describe('agent credential auth', () => {
       const history = await createHistory(team._id);
       const body = {
         alertHistoryId: history._id.toString(),
+        alertId: history.alert.toString(),
         summary: 'nope',
       };
 
@@ -264,7 +272,11 @@ describe('agent credential auth', () => {
       await request(credentialApp)
         .post('/agent/investigations')
         .set('Authorization', `Bearer ${credential}`)
-        .send({ alertHistoryId: history._id.toString(), summary: 'leak' })
+        .send({
+          alertHistoryId: history._id.toString(),
+          alertId: history.alert.toString(),
+          summary: 'leak',
+        })
         .expect(403);
     });
 
@@ -277,14 +289,39 @@ describe('agent credential auth', () => {
         .set('Authorization', `Bearer ${credential}`)
         .send({
           alertHistoryId: new mongoose.Types.ObjectId().toString(),
+          alertId: new mongoose.Types.ObjectId().toString(),
           summary: 'ghost',
         })
         .expect(404);
       await request(credentialApp)
         .post('/agent/investigations')
         .set('Authorization', `Bearer ${credential}`)
-        .send({ alertHistoryId: 'not-an-object-id', summary: 'ghost' })
+        .send({
+          alertHistoryId: 'not-an-object-id',
+          alertId: new mongoose.Types.ObjectId().toString(),
+          summary: 'ghost',
+        })
         .expect(404);
+    });
+
+    it('rejects a history/alert mismatch (409)', async () => {
+      const { team } = await getLoggedInAgent(server);
+      const credential = await ensureAgentCredential(team._id.toString());
+      const history = await createHistory(team._id);
+
+      // Valid history, but paired with a different alert id: findings must
+      // not be grafted onto another alert's record.
+      await request(credentialApp)
+        .post('/agent/investigations')
+        .set('Authorization', `Bearer ${credential}`)
+        .send({
+          alertHistoryId: history._id.toString(),
+          alertId: new mongoose.Types.ObjectId().toString(),
+          summary: 'grafted',
+        })
+        .expect(409);
+      const after = await AlertHistory.findById(history._id);
+      expect(after?.investigation?.summary).toBeUndefined();
     });
   });
 });

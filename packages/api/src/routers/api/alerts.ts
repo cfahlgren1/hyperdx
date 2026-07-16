@@ -1,6 +1,7 @@
 import type {
   AlertApiResponse,
   AlertHistoryRangeApiResponse,
+  AlertInvestigationsApiResponse,
   AlertsApiResponse,
   AlertsPageItem,
 } from '@hyperdx/common-utils/dist/types';
@@ -14,6 +15,7 @@ import {
   getAlertTransitionsInRange,
   getRecentAlertHistories,
   getRecentAlertHistoriesBatch,
+  getRecentInvestigations,
 } from '@/controllers/alertHistory';
 import {
   createAlert,
@@ -114,6 +116,22 @@ router.get('/', async (req, res: AlertsExpRes, next) => {
       return formatAlertResponse(alert, history);
     });
 
+    sendJson(res, { data });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Registered before '/:id' so the literal path wins over the param route.
+type InvestigationsExpRes = express.Response<AlertInvestigationsApiResponse>;
+router.get('/investigations', async (req, res: InvestigationsExpRes, next) => {
+  try {
+    const teamId = req.user?.team;
+    if (teamId == null) {
+      return res.sendStatus(403);
+    }
+
+    const data = await getRecentInvestigations(teamId.toString());
     sendJson(res, { data });
   } catch (e) {
     next(e);

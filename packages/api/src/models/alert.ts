@@ -90,6 +90,11 @@ export interface IAlert {
 
   // Errors recorded during the most recent execution
   executionErrors?: IAlertError[];
+
+  // When an agent investigation was last dispatched for this alert. Written
+  // via an atomic claim (findOneAndUpdate) so concurrent evaluators cannot
+  // double-dispatch, and doubles as the per-alert cooldown anchor.
+  investigationDispatchedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -233,6 +238,10 @@ const AlertSchema = new Schema<IAlert>(
       ],
       required: false,
       default: undefined,
+    },
+    investigationDispatchedAt: {
+      type: Date,
+      required: false,
     },
   },
   {
