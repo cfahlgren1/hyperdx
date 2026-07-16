@@ -8,7 +8,7 @@ import {
   updateAlert,
   validateAlertInput,
 } from '@/controllers/alerts';
-import type { ToolRegistrar } from '@/mcp/tools/types';
+import type { WriteToolRegistrar } from '@/mcp/tools/types';
 import {
   mcpServerError,
   mcpUserError,
@@ -38,8 +38,9 @@ function toAlertChannel(ch: McpSaveAlertInput['channel']): AlertChannel {
 export function registerSaveAlert({
   context,
   registerTool,
-}: ToolRegistrar): void {
-  const { teamId, userId } = context;
+}: WriteToolRegistrar): void {
+  const { teamId, principal } = context;
+  const userId = principal.id;
   const frontendUrl = config.FRONTEND_URL;
 
   registerTool(

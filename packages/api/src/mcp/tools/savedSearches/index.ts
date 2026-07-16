@@ -1,11 +1,21 @@
-import type { ToolDefinition, ToolRegistrar } from '@/mcp/tools/types';
+import type {
+  ToolDefinition,
+  ToolRegistrar,
+  WriteToolDefinition,
+  WriteToolRegistrar,
+} from '@/mcp/tools/types';
 
 import { registerGetSavedSearch } from './getSavedSearch';
 import { registerSaveSavedSearch } from './saveSavedSearch';
 
-const savedSearchesTools: ToolDefinition = (registrar: ToolRegistrar) => {
+export const savedSearchesReadTools: ToolDefinition = (
+  registrar: ToolRegistrar,
+) => {
   registerGetSavedSearch(registrar);
-  registerSaveSavedSearch(registrar);
 };
 
-export default savedSearchesTools;
+export const savedSearchesWriteTools: WriteToolDefinition = (
+  registrar: WriteToolRegistrar,
+) => {
+  registerSaveSavedSearch(registrar);
+};

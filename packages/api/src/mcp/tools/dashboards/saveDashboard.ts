@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 
 import * as config from '@/config';
-import type { ToolRegistrar } from '@/mcp/tools/types';
+import type { WriteToolRegistrar } from '@/mcp/tools/types';
 import { mcpUserError } from '@/mcp/utils/errors';
 import Dashboard, { IDashboard } from '@/models/dashboard';
 import {
@@ -38,7 +38,7 @@ import {
 export function registerSaveDashboard({
   context,
   registerTool,
-}: ToolRegistrar): void {
+}: WriteToolRegistrar): void {
   const { teamId } = context;
   const frontendUrl = config.FRONTEND_URL;
 

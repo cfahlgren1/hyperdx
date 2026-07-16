@@ -86,7 +86,8 @@ describe('MCP Source Tools', () => {
 
     const context: McpContext = {
       teamId: team._id.toString(),
-      userId: user._id.toString(),
+      access: 'full',
+      principal: { kind: 'user', id: user._id.toString() },
     };
     client = await createTestClient(context);
   });
@@ -172,7 +173,8 @@ describe('MCP Source Tools', () => {
       const result2 = await getLoggedInAgent(server);
       const context2: McpContext = {
         teamId: result2.team._id.toString(),
-        userId: result2.user._id.toString(),
+        access: 'full',
+        principal: { kind: 'user', id: result2.user._id.toString() },
       };
       const client2 = await createTestClient(context2);
 

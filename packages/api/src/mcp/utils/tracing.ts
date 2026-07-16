@@ -38,7 +38,8 @@ export function withToolTracing<TArgs>(
     const logContext = {
       tool: toolName,
       teamId: context.teamId,
-      userId: context.userId,
+      principalKind: context.principal.kind,
+      principalId: context.principal.id,
     };
 
     return withSpan(
@@ -47,7 +48,11 @@ export function withToolTracing<TArgs>(
         const startTime = Date.now();
         span.setAttribute('mcp.tool.name', toolName);
         span.setAttribute('mcp.team.id', context.teamId);
-        span.setAttribute('mcp.user.id', context.userId);
+        span.setAttribute('mcp.principal.kind', context.principal.kind);
+        span.setAttribute('mcp.principal.id', context.principal.id);
+        if (context.principal.kind === 'user') {
+          span.setAttribute('mcp.user.id', context.principal.id);
+        }
 
         logger.info(logContext, `MCP tool invoked: ${toolName}`);
 
