@@ -189,11 +189,13 @@ describe('agent credential auth', () => {
           alertHistoryId: history._id.toString(),
           alertId: history.alert.toString(),
           summary: 'root cause: X',
+          gist: 'X exhausted memory',
         })
         .expect(204);
 
       const updated = await AlertHistory.findById(history._id);
       expect(updated?.investigation?.summary).toBe('root cause: X');
+      expect(updated?.investigation?.gist).toBe('X exhausted memory');
       expect(updated?.investigation?.completedAt).toBeTruthy();
 
       // A second write is rejected: delivered summaries are immutable.
@@ -204,6 +206,7 @@ describe('agent credential auth', () => {
           alertHistoryId: history._id.toString(),
           alertId: history.alert.toString(),
           summary: 'overwrite attempt',
+          gist: 'gist',
         })
         .expect(409);
     });
@@ -219,6 +222,7 @@ describe('agent credential auth', () => {
           alertHistoryId: history._id.toString(),
           alertId: history.alert.toString(),
           summary: 'via access key',
+          gist: 'gist',
         })
         .expect(401);
 
@@ -239,6 +243,7 @@ describe('agent credential auth', () => {
           alertHistoryId: history._id.toString(),
           alertId: history.alert.toString(),
           summary: 'spam',
+          gist: 'gist',
         })
         .expect(409);
     });
@@ -250,6 +255,7 @@ describe('agent credential auth', () => {
         alertHistoryId: history._id.toString(),
         alertId: history.alert.toString(),
         summary: 'nope',
+        gist: 'gist',
       };
 
       await request(credentialApp)
@@ -276,6 +282,7 @@ describe('agent credential auth', () => {
           alertHistoryId: history._id.toString(),
           alertId: history.alert.toString(),
           summary: 'leak',
+          gist: 'gist',
         })
         .expect(403);
     });
@@ -291,6 +298,7 @@ describe('agent credential auth', () => {
           alertHistoryId: new mongoose.Types.ObjectId().toString(),
           alertId: new mongoose.Types.ObjectId().toString(),
           summary: 'ghost',
+          gist: 'gist',
         })
         .expect(404);
       await request(credentialApp)
@@ -300,6 +308,7 @@ describe('agent credential auth', () => {
           alertHistoryId: 'not-an-object-id',
           alertId: new mongoose.Types.ObjectId().toString(),
           summary: 'ghost',
+          gist: 'gist',
         })
         .expect(404);
     });
@@ -318,6 +327,7 @@ describe('agent credential auth', () => {
           alertHistoryId: history._id.toString(),
           alertId: new mongoose.Types.ObjectId().toString(),
           summary: 'grafted',
+          gist: 'gist',
         })
         .expect(409);
       const after = await AlertHistory.findById(history._id);

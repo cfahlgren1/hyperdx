@@ -69,15 +69,16 @@ export function createAgentCredentialApp() {
       }
       const teamId = installation.team;
 
-      const { alertHistoryId, alertId, summary } = req.body ?? {};
+      const { alertHistoryId, alertId, summary, gist } = req.body ?? {};
       if (
         typeof alertHistoryId !== 'string' ||
         typeof alertId !== 'string' ||
-        typeof summary !== 'string'
+        typeof summary !== 'string' ||
+        typeof gist !== 'string'
       ) {
-        return res
-          .status(400)
-          .json({ error: 'alertHistoryId, alertId, and summary are required' });
+        return res.status(400).json({
+          error: 'alertHistoryId, alertId, summary, and gist are required',
+        });
       }
       if (
         !mongoose.isValidObjectId(alertHistoryId) ||
@@ -117,6 +118,7 @@ export function createAgentCredentialApp() {
         {
           $set: {
             'investigation.summary': summary,
+            'investigation.gist': gist,
             'investigation.completedAt': new Date(),
           },
         },

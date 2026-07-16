@@ -1,6 +1,11 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { formatDistanceToNowStrict } from 'date-fns';
+import {
+  format,
+  formatDistanceToNowStrict,
+  isToday,
+  isYesterday,
+} from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import { AlertInvestigationItem } from '@hyperdx/common-utils/dist/types';
 import {
@@ -28,22 +33,10 @@ function getAlertUrl(item: AlertInvestigationItem): string {
   return '/alerts';
 }
 
-/** First sentence of the "Most Probable Cause" section, for the gist line. */
-function extractGist(summary: string): string {
-  const causeMatch = summary.match(
-    /\*\*Most Probable Cause:?\*\*\s*\n?([\s\S]*?)(?=\n\s*\n|\n#|$)/i,
-  );
-  const source = causeMatch?.[1] ?? summary;
-  const line = source
-    .split('\n')
-    .map(l =>
-      l
-        .replace(/^[#*\-\s]+/, '')
-        .replace(/\*\*/g, '')
-        .trim(),
-    )
-    .find(l => l.length > 20);
-  return line ?? summary.slice(0, 160);
+function dayLabel(date: Date): string {
+  if (isToday(date)) return `Today — ${format(date, 'MMM d')}`;
+  if (isYesterday(date)) return `Yesterday — ${format(date, 'MMM d')}`;
+  return format(date, 'EEEE — MMM d, yyyy');
 }
 
 function investigationDuration(item: AlertInvestigationItem): string | null {
@@ -63,10 +56,10 @@ function InvestigationCard({ item }: { item: AlertInvestigationItem }) {
   const firedAt = new Date(item.createdAt);
 
   return (
-    <Paper withBorder p="md" radius="md">
+    <Paper withBorder p="sm" px="md" radius="md">
       <UnstyledButton onClick={toggle} w="100%">
         <Group justify="space-between" wrap="nowrap" align="flex-start">
-          <Stack gap={6} style={{ minWidth: 0 }}>
+          <Stack gap={5} style={{ minWidth: 0 }}>
             <Group gap="xs" wrap="nowrap">
               <IconReportSearch
                 size={15}
@@ -92,7 +85,7 @@ function InvestigationCard({ item }: { item: AlertInvestigationItem }) {
             </Group>
             {!opened && (
               <Text size="sm" c="gray.4" lineClamp={2}>
-                {extractGist(item.investigation.summary)}
+                {item.investigation.gist}
               </Text>
             )}
           </Stack>
@@ -135,10 +128,34 @@ function InvestigationCard({ item }: { item: AlertInvestigationItem }) {
   );
 }
 
-// Chronological feed of AI investigation reports across all alerts, newest
-// first. Backed by GET /alerts/investigations, which queries investigations
-// directly instead of the rolling per-alert history window, so summaries stay
-// reachable after they scroll out of the 20-entry chart history.
+function TimelineItem({ item }: { item: AlertInvestigationItem }) {
+  return (
+    <Box pos="relative" mb={10}>
+      {/* Centered on the rail: container pl=26 and rail center at 7.5px put
+          the 9px dot at -23; top 18 centers it on the card's first row. */}
+      <Box
+        pos="absolute"
+        left={-23}
+        top={18}
+        w={9}
+        h={9}
+        style={{
+          borderRadius: '50%',
+          background: 'var(--mantine-color-red-6)',
+          boxShadow:
+            '0 0 0 3px var(--mantine-color-body), 0 0 8px var(--mantine-color-red-9)',
+        }}
+      />
+      <InvestigationCard item={item} />
+    </Box>
+  );
+}
+
+// Chronological timeline of AI investigation reports across all alerts,
+// newest first and grouped by day. Backed by GET /alerts/investigations,
+// which queries investigations directly instead of the rolling per-alert
+// history window, so summaries stay reachable after they scroll out of the
+// 20-entry chart history.
 export function InvestigationsFeed({
   entries,
   isLoading,
@@ -180,11 +197,38 @@ export function InvestigationsFeed({
     );
   }
 
+  // Entries arrive newest-first; group consecutive runs by calendar day.
+  const groups: { label: string; items: AlertInvestigationItem[] }[] = [];
+  for (const item of entries) {
+    const label = dayLabel(new Date(item.createdAt));
+    const last = groups[groups.length - 1];
+    if (last?.label === label) {
+      last.items.push(item);
+    } else {
+      groups.push({ label, items: [item] });
+    }
+  }
+
   return (
-    <Stack gap="sm" mt="md">
-      {entries.map((item, i) => (
-        <InvestigationCard key={i} item={item} />
+    <Box pos="relative" pl={26} mt="md">
+      <Box
+        pos="absolute"
+        left={7}
+        top={6}
+        bottom={6}
+        w={1}
+        bg="var(--mantine-color-default-border)"
+      />
+      {groups.map(group => (
+        <Box key={group.label}>
+          <Text size="xs" c="dimmed" tt="uppercase" lts={1} mt="lg" mb={10}>
+            {group.label}
+          </Text>
+          {group.items.map((item, i) => (
+            <TimelineItem key={i} item={item} />
+          ))}
+        </Box>
       ))}
-    </Stack>
+    </Box>
   );
 }

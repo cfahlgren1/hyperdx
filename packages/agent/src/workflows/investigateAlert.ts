@@ -8,12 +8,12 @@ const WRITEBACK_URL =
   process.env.HYPERDX_INVESTIGATION_WRITEBACK_URL?.trim() ||
   'http://localhost:8001/agent/investigations';
 
-// Post the findings summary back to the ClickStack API, which stores it on
-// the alert history after team- and alert-ownership checks.
+// Post the findings back to the ClickStack API, which stores them on the
+// alert history after team- and alert-ownership checks.
 async function postFindings(
   alertHistoryId: string,
   alertId: string,
-  summary: string,
+  findings: { summary: string; gist: string },
 ): Promise<void> {
   const response = await fetch(WRITEBACK_URL, {
     method: 'POST',
@@ -21,7 +21,7 @@ async function postFindings(
       'content-type': 'application/json',
       authorization: `Bearer ${clickstackCredential}`,
     },
-    body: JSON.stringify({ alertHistoryId, alertId, summary }),
+    body: JSON.stringify({ alertHistoryId, alertId, ...findings }),
     // Bound the request so a stalled API cannot pin the workflow run open.
     signal: AbortSignal.timeout(30_000),
   });
@@ -56,7 +56,18 @@ const input = v.object({
 });
 
 const output = v.object({
-  summary: v.string(),
+  summary: v.pipe(
+    v.string(),
+    v.description(
+      'Markdown investigation report: what fired, what you observed, and the most probable cause. Distinguish observed facts from hypotheses.',
+    ),
+  ),
+  gist: v.pipe(
+    v.string(),
+    v.description(
+      'One plain sentence, no markdown, stating the most probable cause.',
+    ),
+  ),
 });
 
 function buildPrompt(data: v.InferOutput<typeof input>): string {
@@ -77,7 +88,7 @@ function buildPrompt(data: v.InferOutput<typeof input>): string {
   }
   lines.push(
     '',
-    'Using your read-only tools: look up this alert (clickstack_get_alert), identify its source, and query the relevant telemetry around the fire time. Then produce a concise summary (a few sentences) of what fired, what you observed, and the most probable cause. Distinguish observed facts from hypotheses.',
+    'Using your read-only tools: look up this alert (clickstack_get_alert), identify its source, and query the relevant telemetry around the fire time. Then report your findings.',
   );
   return lines.join('\n');
 }
@@ -88,11 +99,12 @@ export default defineWorkflow({
   output,
   async run(ctx) {
     const session = await ctx.harness.session();
-    const response = await session.prompt(buildPrompt(ctx.input));
-    const summary = response.text;
+    const { data: findings } = await session.prompt(buildPrompt(ctx.input), {
+      result: output,
+    });
 
-    await postFindings(ctx.input.alertHistoryId, ctx.input.alertId, summary);
+    await postFindings(ctx.input.alertHistoryId, ctx.input.alertId, findings);
 
-    return { summary };
+    return findings;
   },
 });

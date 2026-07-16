@@ -154,6 +154,7 @@ export type RecentInvestigation = {
   group?: string;
   investigation: NonNullable<IAlertHistory['investigation']> & {
     summary: string;
+    gist: string;
   };
 };
 

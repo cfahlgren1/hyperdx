@@ -7,10 +7,12 @@ import type { ObjectId } from '.';
 
 // Set when a fresh alert fire triggers an agent investigation: `requestedAt`
 // = requested, `summary` = delivered. A failed investigation simply never
-// gets a summary (at-most-once by design).
+// gets a summary (at-most-once by design). `gist` is the agent's one-sentence
+// most-probable-cause headline.
 interface IAlertInvestigation {
   requestedAt: Date;
   summary?: string;
+  gist?: string;
   completedAt?: Date;
 }
 
@@ -69,6 +71,10 @@ const AlertHistorySchema = new Schema<IAlertHistory>({
         required: true,
       },
       summary: {
+        type: String,
+        required: false,
+      },
+      gist: {
         type: String,
         required: false,
       },

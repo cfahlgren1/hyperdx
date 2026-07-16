@@ -644,6 +644,7 @@ export const AlertHistorySchema = z.object({
     .object({
       requestedAt: z.string(),
       summary: z.string().optional(),
+      gist: z.string().optional(),
       completedAt: z.string().optional(),
     })
     .optional(),
@@ -2140,6 +2141,8 @@ export const AlertInvestigationItemSchema = z.object({
   investigation: z.object({
     requestedAt: z.string(),
     summary: z.string(),
+    // One-sentence most-probable-cause headline, delivered with the summary.
+    gist: z.string(),
     completedAt: z.string().optional(),
   }),
 });
