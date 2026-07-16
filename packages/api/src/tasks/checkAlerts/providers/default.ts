@@ -47,7 +47,7 @@ const alertInvestigationDispatchCounter = getCounter(
   'hyperdx.alerts.investigation_dispatches',
   {
     description:
-      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, cooldown, budget, or skipped_team).',
+      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, ambiguous, cooldown, budget, or skipped_team).',
   },
 );
 
@@ -56,7 +56,7 @@ const alertInvestigationDispatchCounter = getCounter(
 const MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION = 5;
 
 // Bounds each workflow dispatch so a stalled agent endpoint cannot accumulate
-// sockets across evaluations (and so the asyncDispose flush is bounded too).
+// sockets across evaluations.
 const INVESTIGATION_DISPATCH_TIMEOUT_MS = 10_000;
 
 // At most one investigation per alert per window, so a flapping alert
