@@ -54,6 +54,11 @@ export const IS_LOCAL_APP_MODE =
 export const DEFAULT_CONNECTIONS = env.DEFAULT_CONNECTIONS;
 export const DEFAULT_SOURCES = env.DEFAULT_SOURCES;
 
+// Serves the on-call agent's MCP credential to the internal compose network.
+// Only enable when the network between the API and the agent is trusted.
+export const AGENT_CREDENTIAL_ENDPOINT_ENABLED =
+  env.AGENT_CREDENTIAL_ENDPOINT_ENABLED === 'true';
+
 export const IS_PROMQL_ENABLED = env.ENABLE_PROMQL === 'true';
 
 // FOR CI ONLY

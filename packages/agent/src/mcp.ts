@@ -1,50 +1,71 @@
 import { connectMcpServer, type ToolDefinition } from '@flue/runtime';
 
-// Read-only subset of the ClickStack MCP server's tools. The server also
-// exposes mutating dashboard/alert/saved-search tools, so this is an explicit
-// allowlist — new server-side tools stay excluded until listed here.
-const READ_ONLY_TOOLS = new Set([
-  'clickstack_describe_metric',
-  'clickstack_describe_source',
-  'clickstack_event_deltas',
-  'clickstack_event_patterns',
-  'clickstack_get_alert',
-  'clickstack_get_dashboard',
-  'clickstack_get_dashboard_tile',
-  'clickstack_get_saved_search',
-  'clickstack_get_webhook',
-  'clickstack_list_metrics',
-  'clickstack_list_sources',
-  'clickstack_query_tile',
-  'clickstack_search',
-  'clickstack_search_dashboards',
-  'clickstack_sql',
-  'clickstack_table',
-  'clickstack_timeseries',
-  'clickstack_trace_top_time_consuming_operations',
-  'clickstack_trace_waterfall',
-]);
+const MCP_URL =
+  process.env.HYPERDX_MCP_URL?.trim() || 'http://localhost:8000/mcp';
 
-const MCP_TOOL_PREFIX = 'mcp__clickstack__';
+const CREDENTIAL_URL = new URL('/agent/credential', MCP_URL).toString();
+const CREDENTIAL_FETCH_ATTEMPTS = 24;
+const CREDENTIAL_FETCH_DELAY_MS = 5_000;
 
-async function connectClickstackTools(): Promise<ToolDefinition[]> {
-  const url =
-    process.env.HYPERDX_MCP_URL?.trim() || 'http://localhost:8000/mcp';
-  const accessKey = process.env.HYPERDX_MCP_ACCESS_KEY?.trim();
-  if (!accessKey) {
-    throw new Error(
-      'HYPERDX_MCP_ACCESS_KEY is required so the assistant can query ClickStack. Use your Personal API Access Key from Team Settings.',
+/**
+ * Resolve the MCP credential: an explicit env key wins, otherwise fetch the
+ * agent credential ClickStack mints for this installation. The fetch retries
+ * for ~2 minutes (the API may still be booting, or nobody has registered an
+ * account yet) and then exits so the container's restart policy takes over.
+ */
+async function resolveCredential(): Promise<string> {
+  const override = process.env.HYPERDX_MCP_ACCESS_KEY?.trim();
+  if (override) {
+    return override;
+  }
+
+  for (let attempt = 1; attempt <= CREDENTIAL_FETCH_ATTEMPTS; attempt++) {
+    const progress = `(attempt ${attempt}/${CREDENTIAL_FETCH_ATTEMPTS})`;
+    try {
+      const response = await fetch(CREDENTIAL_URL);
+      if (response.ok) {
+        const { credential } = (await response.json()) as {
+          credential?: string;
+        };
+        if (credential) {
+          return credential;
+        }
+      } else if (response.status === 409) {
+        console.log(
+          `Waiting for ClickStack registration — create an account in the app first ${progress}`,
+        );
+      } else {
+        console.log(
+          `Credential endpoint returned ${response.status}; set AGENT_CREDENTIAL_ENDPOINT_ENABLED=true on the app service or provide HYPERDX_MCP_ACCESS_KEY ${progress}`,
+        );
+      }
+    } catch {
+      console.log(
+        `Waiting for the ClickStack API at ${CREDENTIAL_URL} ${progress}`,
+      );
+    }
+    await new Promise(resolve =>
+      setTimeout(resolve, CREDENTIAL_FETCH_DELAY_MS),
     );
   }
 
+  console.error(
+    'Could not obtain a ClickStack agent credential; exiting so the container can retry.',
+  );
+  return process.exit(1);
+}
+
+async function connectClickstackTools(): Promise<ToolDefinition[]> {
+  const credential = await resolveCredential();
+
+  // The server decides which tools this credential may use (agent credentials
+  // get the read-only profile), so everything offered is taken as-is.
   const connection = await connectMcpServer('clickstack', {
-    url,
-    headers: { authorization: `Bearer ${accessKey}` },
+    url: MCP_URL,
+    headers: { authorization: `Bearer ${credential}` },
   });
 
-  return connection.tools.filter(tool =>
-    READ_ONLY_TOOLS.has(tool.name.replace(MCP_TOOL_PREFIX, '')),
-  );
+  return connection.tools;
 }
 
 export const clickstackTools = await connectClickstackTools();

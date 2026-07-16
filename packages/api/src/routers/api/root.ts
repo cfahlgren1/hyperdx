@@ -5,11 +5,12 @@ import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
 import * as config from '@/config';
+import { ensureAgentCredential } from '@/controllers/agentInstallation';
 import {
   generateAlertSilenceToken,
   silenceAlertByToken,
 } from '@/controllers/alerts';
-import { createTeam, isTeamExisting } from '@/controllers/team';
+import { createTeam, getAllTeams, isTeamExisting } from '@/controllers/team';
 import { handleAuthError, redirectToDashboard } from '@/middleware/auth';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user'; // TODO -> do not import model directly
@@ -47,6 +48,33 @@ router.get('/installation', async (_, res: InstallationEspRes, next) => {
     return res.json({
       isTeamExisting: _isTeamExisting,
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Serves the on-call agent's read-only MCP credential. Intentionally
+// unauthenticated: it is only enabled for deployments where the network
+// between the API and the agent is trusted (the compose-internal network),
+// and it must never be exposed through the public frontend proxy.
+router.get('/agent/credential', async (_, res, next) => {
+  try {
+    if (!config.AGENT_CREDENTIAL_ENDPOINT_ENABLED) {
+      return res.sendStatus(404);
+    }
+
+    const [team] = await getAllTeams(['_id']);
+    if (team == null) {
+      logger.info(
+        'Agent credential requested before registration; register a ClickStack account first',
+      );
+      return res.status(409).json({
+        error: 'No team exists yet. Register a ClickStack account first.',
+      });
+    }
+
+    const credential = await ensureAgentCredential(team._id.toString());
+    return res.json({ credential });
   } catch (e) {
     next(e);
   }

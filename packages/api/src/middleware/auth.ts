@@ -3,7 +3,10 @@ import type { NextFunction, Request, Response } from 'express';
 import { serializeError } from 'serialize-error';
 
 import * as config from '@/config';
+import { findAgentInstallationByCredential } from '@/controllers/agentInstallation';
 import { findUserByAccessKey } from '@/controllers/user';
+import type { McpContext } from '@/mcp/tools/types';
+import { AGENT_CREDENTIAL_PREFIX } from '@/models/agentInstallation';
 import type { UserDocument } from '@/models/user';
 import {
   getStaticFeatureFlags,
@@ -18,6 +21,7 @@ declare global {
   namespace Express {
     interface Request {
       _hdx_connection?: Connection;
+      mcpContext?: McpContext;
     }
   }
 }
@@ -108,6 +112,76 @@ export async function validateUserAccessKey(
   });
 
   next();
+}
+
+/**
+ * Authenticates MCP callers. Two credential types, dispatched by prefix:
+ *
+ * - `hdx_agent_…` — the on-call agent's read-only installation credential.
+ *   Resolves to a read-only agent principal and never sets `req.user`, so the
+ *   credential is useless against session or External API v2 routes.
+ * - anything else — a personal API access key, preserving existing MCP
+ *   behavior with a full-access user principal.
+ */
+export async function validateMcpCredential(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const key = req.headers.authorization?.split('Bearer ')[1];
+    if (!key) {
+      return res.sendStatus(401);
+    }
+
+    if (key.startsWith(AGENT_CREDENTIAL_PREFIX)) {
+      const installation = await findAgentInstallationByCredential(key);
+      if (!installation) {
+        return res.sendStatus(401);
+      }
+      if (!installation.team) {
+        return res.sendStatus(403);
+      }
+
+      req.mcpContext = {
+        teamId: installation.team.toString(),
+        access: 'read',
+        principal: { kind: 'agent', id: installation._id.toString() },
+      };
+
+      setBusinessContext({
+        teamId: req.mcpContext.teamId,
+        ...getStaticFeatureFlags(),
+      });
+
+      return next();
+    }
+
+    const user = await findUserByAccessKey(key);
+    if (!user) {
+      return res.sendStatus(401);
+    }
+    if (!user.team) {
+      return res.sendStatus(403);
+    }
+
+    req.mcpContext = {
+      teamId: user.team.toString(),
+      access: 'full',
+      principal: { kind: 'user', id: user._id.toString() },
+    };
+
+    setBusinessContext({
+      teamId: req.mcpContext.teamId,
+      userId: user._id?.toString(),
+      email: user.email,
+      ...getStaticFeatureFlags(),
+    });
+
+    return next();
+  } catch (e) {
+    return next(e);
+  }
 }
 
 export function isUserAuthenticated(

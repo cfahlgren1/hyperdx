@@ -1,0 +1,12 @@
+# Builds the app image from this checkout instead of pulling the published
+# release. Use it to verify local changes to packages/api or packages/app end
+# to end:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev-image.yml \
+#     --profile agent up -d --build
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/hyperdx/Dockerfile
+      target: prod

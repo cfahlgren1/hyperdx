@@ -32,10 +32,11 @@ Conversations are stored in a SQLite file under `.volumes/agent/` (override with
 
 ## ClickStack tools
 
-The assistant queries ClickStack through the API's MCP server with a read-only
-tool allowlist (search, SQL, traces, dashboards/alerts reads, no writes). Set
-`HYPERDX_MCP_ACCESS_KEY` to a personal API access key from Team Settings; all
-conversations query as that key's user and team. The MCP server defaults to
+The assistant queries ClickStack through the API's MCP server, which serves
+agent credentials a read-only tool profile (search, SQL, traces,
+dashboards/alerts reads, no writes). In Docker Compose the agent provisions
+its credential itself; for local dev set `HYPERDX_MCP_ACCESS_KEY` to a
+personal API access key from Team Settings. The MCP server defaults to
 `http://localhost:8000/mcp` (override with `HYPERDX_MCP_URL`).
 
 ## How it works
@@ -64,6 +65,9 @@ The service is opt-in (`agent` profile) and bound to loopback only:
 ```bash
 ANTHROPIC_API_KEY="..." docker compose --profile agent up -d --build agent
 ```
+
+No ClickStack credential is needed: once you register an account in the app,
+the agent fetches its own read-only credential from the API and connects.
 
 The SQLite database lives in the `agent_data` volume. Override the host port
 with `HYPERDX_AGENT_PORT` (default `4010`).
