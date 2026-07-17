@@ -28,6 +28,7 @@ import {
   validateAlertInput,
 } from '@/controllers/alerts';
 import { IAlertHistory } from '@/models/alertHistory';
+import Team from '@/models/team';
 import { PreSerialized, sendJson } from '@/utils/serialization';
 import { alertSchema, objectIdSchema } from '@/utils/zod';
 
@@ -90,6 +91,7 @@ const formatAlertResponse = (
       'updatedAt',
       'executionErrors',
       'numConsecutiveWindows',
+      'investigationsDisabled',
     ]),
   };
 };
@@ -132,8 +134,12 @@ router.get('/investigations', async (req, res: InvestigationsExpRes, next) => {
       return res.sendStatus(403);
     }
 
+    const team = await Team.findById(teamId).select('investigationsEnabled');
+    const enabled =
+      config.AGENT_INVESTIGATIONS_ENABLED &&
+      team?.investigationsEnabled !== false;
     const data = await getRecentInvestigations(teamId.toString());
-    sendJson(res, { enabled: config.AGENT_INVESTIGATIONS_ENABLED, data });
+    sendJson(res, { enabled, data });
   } catch (e) {
     next(e);
   }

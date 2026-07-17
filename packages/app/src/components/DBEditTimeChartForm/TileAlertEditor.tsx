@@ -13,6 +13,7 @@ import {
   Alert,
   Badge,
   Box,
+  Checkbox,
   Collapse,
   Group,
   NativeSelect,
@@ -64,6 +65,12 @@ export function TileAlertEditor({
 }) {
   const [opened, { toggle }] = useDisclosure(true);
 
+  const investigationsEnabled =
+    api.useAlertInvestigations().data?.enabled === true;
+  const alertInvestigationsDisabled = useWatch({
+    control,
+    name: 'alert.investigationsDisabled',
+  });
   const alertChannelType = useWatch({ control, name: 'alert.channel.type' });
   const alertThresholdType = useWatch({ control, name: 'alert.thresholdType' });
   const alertThreshold = useWatch({ control, name: 'alert.threshold' });
@@ -244,6 +251,23 @@ export function TileAlertEditor({
             numConsecutiveWindowsName="alert.numConsecutiveWindows"
             numConsecutiveWindows={alertnumConsecutiveWindows ?? undefined}
           />
+          {investigationsEnabled && (
+            <Checkbox
+              mt="xs"
+              size="xs"
+              label="Investigate with the on-call agent when this alert fires"
+              checked={alertInvestigationsDisabled !== true}
+              onChange={event =>
+                setValue(
+                  'alert.investigationsDisabled',
+                  !event.target.checked,
+                  {
+                    shouldDirty: true,
+                  },
+                )
+              }
+            />
+          )}
           <Text size="xxs" opacity={0.5} mb={4} mt="sm">
             Send to
           </Text>

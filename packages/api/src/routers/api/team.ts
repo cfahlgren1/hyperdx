@@ -26,6 +26,7 @@ import {
   findUserByEmail,
   findUsersByTeam,
 } from '@/controllers/user';
+import Team from '@/models/team';
 import TeamInvite from '@/models/teamInvite';
 import { sendJson } from '@/utils/serialization';
 import { objectIdSchema } from '@/utils/zod';
@@ -51,6 +52,7 @@ router.get('/', async (req, res: TeamApiExpRes, next) => {
       'apiKey',
       'name',
       'createdAt',
+      'investigationsEnabled',
     ] as const;
     const team = await getTeam(teamId, fields);
     if (team == null) {
@@ -96,6 +98,28 @@ router.patch(
       const { name } = req.body;
       const team = await setTeamName(teamId, name);
       res.json({ name: team?.name });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/investigations-settings',
+  processRequest({
+    body: z.object({ enabled: z.boolean() }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        throw new Error(`User ${req.user?._id} not associated with a team`);
+      }
+      await Team.updateOne(
+        { _id: teamId },
+        { $set: { investigationsEnabled: req.body.enabled } },
+      );
+      res.json({ investigationsEnabled: req.body.enabled });
     } catch (e) {
       next(e);
     }

@@ -23,6 +23,7 @@ import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
 import McpServerSection from './components/TeamSettings/McpServerSection';
 import SecurityPoliciesSection from './components/TeamSettings/SecurityPoliciesSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
+import TeamInvestigationsSection from './components/TeamSettings/TeamInvestigationsSection';
 import TeamMembersSection from './components/TeamSettings/TeamMembersSection';
 import TeamQueryConfigSection from './components/TeamSettings/TeamQueryConfigSection';
 import { useBrandDisplayName } from './theme/ThemeProvider';
@@ -163,6 +164,10 @@ export default function TeamPage() {
         {
           id: 'team-advanced-query-settings',
           content: <TeamQueryConfigSection />,
+        },
+        {
+          id: 'team-advanced-investigations',
+          content: <TeamInvestigationsSection />,
         },
       ],
     },

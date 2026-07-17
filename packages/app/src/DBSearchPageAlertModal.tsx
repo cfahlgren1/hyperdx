@@ -23,6 +23,7 @@ import {
   Alert as MantineAlert,
   Box,
   Button,
+  Checkbox,
   Group,
   LoadingOverlay,
   Modal,
@@ -156,6 +157,12 @@ const AlertForm = ({
   const groupByValue = useWatch({ control, name: 'groupBy' });
   const threshold = useWatch({ control, name: 'threshold' });
   const thresholdMax = useWatch({ control, name: 'thresholdMax' });
+  const investigationsEnabled =
+    api.useAlertInvestigations().data?.enabled === true;
+  const investigationsDisabled = useWatch({
+    control,
+    name: 'investigationsDisabled',
+  });
   const numConsecutiveWindows = useWatch({
     control,
     name: 'numConsecutiveWindows',
@@ -285,6 +292,19 @@ const AlertForm = ({
             numConsecutiveWindowsName="numConsecutiveWindows"
             numConsecutiveWindows={numConsecutiveWindows ?? undefined}
           />
+          {investigationsEnabled && (
+            <Checkbox
+              mt="xs"
+              size="xs"
+              label="Investigate with the on-call agent when this alert fires"
+              checked={investigationsDisabled !== true}
+              onChange={event =>
+                setValue('investigationsDisabled', !event.target.checked, {
+                  shouldDirty: true,
+                })
+              }
+            />
+          )}
           <Text size="xxs" opacity={0.5} mb={4} mt="xs">
             grouped by
           </Text>

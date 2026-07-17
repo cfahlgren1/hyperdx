@@ -1104,6 +1104,7 @@ export const processAlert = async (
         previous.fired === true;
       if (
         !config.AGENT_INVESTIGATIONS_ENABLED ||
+        alert.investigationsDisabled === true ||
         history.state !== AlertState.ALERT ||
         previousInFiredEpisode ||
         (alert.silenced?.until?.getTime() ?? 0) > Date.now()

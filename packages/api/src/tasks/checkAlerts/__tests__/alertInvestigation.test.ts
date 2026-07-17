@@ -20,6 +20,7 @@ import AlertHistory from '@/models/alertHistory';
 import Connection from '@/models/connection';
 import { SavedSearch } from '@/models/savedSearch';
 import { Source } from '@/models/source';
+import Team from '@/models/team';
 import Webhook from '@/models/webhook';
 import { AggregatedAlertHistory, processAlert } from '@/tasks/checkAlerts';
 import { AlertTaskType, loadProvider } from '@/tasks/checkAlerts/providers';
@@ -305,6 +306,50 @@ describe('Alert investigation edge marking', () => {
       investigation: { $exists: true },
     });
     expect(otherMarked).toBe(0);
+  });
+
+  it('skips dispatch when the team has investigations disabled', async () => {
+    const team = await createTeam({ name: 'Test Team' });
+    await Team.updateOne(
+      { _id: team._id },
+      { $set: { investigationsEnabled: false } },
+    );
+    const alert = await createTeamAlert(team._id);
+
+    await alertProvider.updateAlertState(
+      alert._id.toString(),
+      [freshFireHistory(alert._id)],
+      [],
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const marked = await AlertHistory.countDocuments({
+      alert: alert._id,
+      investigation: { $exists: true },
+    });
+    expect(marked).toBe(0);
+  });
+
+  it('skips dispatch when the alert opts out of investigations', async () => {
+    const team = await createTeam({ name: 'Test Team' });
+    const alert = await createTeamAlert(team._id);
+    await Alert.updateOne(
+      { _id: alert._id },
+      { $set: { investigationsDisabled: true } },
+    );
+
+    await alertProvider.updateAlertState(
+      alert._id.toString(),
+      [freshFireHistory(alert._id)],
+      [],
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const marked = await AlertHistory.countDocuments({
+      alert: alert._id,
+      investigation: { $exists: true },
+    });
+    expect(marked).toBe(0);
   });
 
   it('releases the dispatch claim when every dispatch in the batch fails', async () => {

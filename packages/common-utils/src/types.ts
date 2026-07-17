@@ -608,6 +608,9 @@ export const AlertBaseObjectSchema = z.object({
     })
     .optional(),
   numConsecutiveWindows: z.number().int().min(1).nullish(),
+  // Opt-out flag for on-call agent investigations; absent means enabled so
+  // existing alerts need no migration.
+  investigationsDisabled: z.boolean().optional(),
 });
 
 // Keep AlertBaseSchema as a ZodObject for backwards compatibility with
@@ -1666,6 +1669,9 @@ export const TeamSchema = z
     apiKey: z.string(),
     hookId: z.string(),
     collectorAuthenticationEnforced: z.boolean(),
+    // Team-level switch for on-call agent investigations; defaults true so an
+    // enabled deployment investigates unless an admin turns it off.
+    investigationsEnabled: z.boolean().optional(),
   })
   .merge(TeamClickHouseSettingsSchema);
 
@@ -2214,6 +2220,7 @@ export const TeamApiResponseSchema = z.object({
   apiKey: z.string(),
   name: z.string(),
   createdAt: z.string(),
+  investigationsEnabled: z.boolean().optional(),
 });
 
 export type TeamApiResponse = z.infer<typeof TeamApiResponseSchema>;
