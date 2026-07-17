@@ -7,6 +7,7 @@ import * as config from '@/config';
 import { LOCAL_APP_TEAM } from '@/controllers/team';
 import { connectDB, mongooseConnection } from '@/models';
 import opampApp from '@/opamp/app';
+import { createAgentCredentialApp } from '@/routers/agentCredential';
 import { setupTeamDefaults } from '@/setupDefaults';
 import logger from '@/utils/logger';
 
@@ -66,6 +67,18 @@ export default class Server {
         `OpAMP Server listening on port ${config.OPAMP_PORT}, NODE_ENV=${process.env.NODE_ENV}`,
       );
     });
+
+    if (config.AGENT_INVESTIGATIONS_ENABLED) {
+      // Internal-only: this port must not be published outside the trusted
+      // network. The Compose file enables the flag without mapping the port.
+      http
+        .createServer(createAgentCredentialApp())
+        .listen(config.AGENT_CREDENTIAL_PORT, () => {
+          logger.info(
+            `Agent credential server listening on port ${config.AGENT_CREDENTIAL_PORT}`,
+          );
+        });
+    }
 
     if (this.shouldHandleGracefulShutdown) {
       [this.appServer, this.opampServer].forEach(server => {

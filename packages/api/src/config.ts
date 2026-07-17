@@ -54,6 +54,16 @@ export const IS_LOCAL_APP_MODE =
 export const DEFAULT_CONNECTIONS = env.DEFAULT_CONNECTIONS;
 export const DEFAULT_SOURCES = env.DEFAULT_SOURCES;
 
+export const AGENT_CREDENTIAL_PORT = Number.parseInt(
+  env.AGENT_CREDENTIAL_PORT ?? '8001',
+);
+
+// When enabled, the on-call agent's internal-only credential listener starts
+// alongside the API so the agent sidecar can provision its read-only MCP
+// credential with zero configuration.
+export const AGENT_INVESTIGATIONS_ENABLED =
+  env.AGENT_INVESTIGATIONS_ENABLED === 'true';
+
 export const IS_PROMQL_ENABLED = env.ENABLE_PROMQL === 'true';
 
 // FOR CI ONLY
