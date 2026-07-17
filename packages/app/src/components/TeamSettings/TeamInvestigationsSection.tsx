@@ -20,7 +20,7 @@ export default function TeamInvestigationsSection() {
   const onToggle = (next: boolean) => {
     setEnabled(next);
     updateSettings.mutate(
-      { enabled: next },
+      { investigationsEnabled: next },
       {
         onSuccess: () => {
           refetchTeam();

@@ -65,8 +65,8 @@ export function TileAlertEditor({
 }) {
   const [opened, { toggle }] = useDisclosure(true);
 
-  const investigationsEnabled =
-    api.useAlertInvestigations().data?.enabled === true;
+  const investigationsAvailable =
+    api.useAlertInvestigations().data !== undefined;
   const alertInvestigationsDisabled = useWatch({
     control,
     name: 'alert.investigationsDisabled',
@@ -251,7 +251,7 @@ export function TileAlertEditor({
             numConsecutiveWindowsName="alert.numConsecutiveWindows"
             numConsecutiveWindows={alertnumConsecutiveWindows ?? undefined}
           />
-          {investigationsEnabled && (
+          {investigationsAvailable && (
             <Checkbox
               mt="xs"
               size="xs"

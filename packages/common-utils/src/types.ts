@@ -2161,6 +2161,9 @@ export const AlertInvestigationsApiResponseSchema = z.object({
   // Whether the deployment has agent investigations enabled; lets the UI hide
   // the feature entirely instead of showing a dead tab.
   enabled: z.boolean(),
+  // Deployment-level availability (env flag), independent of the team switch;
+  // drives per-alert checkbox visibility so team pauses don't hide preferences.
+  available: z.boolean().optional(),
   data: z.array(AlertInvestigationItemSchema),
 });
 
