@@ -53,6 +53,11 @@ services:
       - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
       - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
     environment:
+      # Enable alert-triggered agent investigations. Turn on together with the
+      # `agent` profile; when off, no investigations are dispatched and the
+      # internal credential listener is not started.
+      AGENT_INVESTIGATIONS_ENABLED: ${AGENT_INVESTIGATIONS_ENABLED:-false}
+      AGENT_WORKFLOW_URL: ${AGENT_WORKFLOW_URL:-http://agent:4010/workflows/investigateAlert}
       FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
       HYPERDX_API_KEY: ${HYPERDX_API_KEY}
       HYPERDX_API_PORT: ${HYPERDX_API_PORT}
@@ -88,6 +93,36 @@ services:
     depends_on:
       - ch-server
       - db
+  agent:
+    profiles:
+      - agent
+    build:
+      context: .
+      dockerfile: docker/agent/Dockerfile
+    environment:
+      AI_MODEL_NAME: ${AI_MODEL_NAME:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      HYPERDX_AGENT_CREDENTIAL_URL: ${HYPERDX_AGENT_CREDENTIAL_URL:-http://app:8001/agent/credential}
+      HYPERDX_INVESTIGATION_WRITEBACK_URL: ${HYPERDX_INVESTIGATION_WRITEBACK_URL:-http://app:8001/agent/investigations}
+      HYPERDX_MCP_URL: ${HYPERDX_MCP_URL:-http://app:${HYPERDX_API_PORT}/mcp}
+      FLUE_DB_PATH: /data/flue.db
+      PORT: '4010'
+    ports:
+      - '127.0.0.1:${HYPERDX_AGENT_PORT:-4010}:4010'
+    volumes:
+      - agent_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: on-failure
+    networks:
+      - agent
+      - internal
   ch-server:
     image: clickhouse/clickhouse-server:26.5-alpine
     # WARNING: Exposing the database port will make it accessible from outside the container,
@@ -109,3 +144,6 @@ services:
       - internal
 networks:
   internal:
+  agent:
+volumes:
+  agent_data:
