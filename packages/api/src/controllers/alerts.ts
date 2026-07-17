@@ -158,6 +158,8 @@ const makeAlert = (alert: AlertInput, userId?: ObjectId): Partial<IAlert> => {
 
     // Multi-window alerting
     numConsecutiveWindows: alert.numConsecutiveWindows ?? null,
+
+    investigationsDisabled: alert.investigationsDisabled ?? undefined,
   };
 };
 

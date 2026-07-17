@@ -95,6 +95,8 @@ export interface IAlert {
   // via an atomic claim (findOneAndUpdate) so concurrent evaluators cannot
   // double-dispatch, and doubles as the per-alert cooldown anchor.
   investigationDispatchedAt?: Date;
+  // Opt-out flag for agent investigations; absent means enabled.
+  investigationsDisabled?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -237,6 +239,10 @@ const AlertSchema = new Schema<IAlert>(
         },
       ],
       required: false,
+      default: undefined,
+    },
+    investigationsDisabled: {
+      type: Boolean,
       default: undefined,
     },
     investigationDispatchedAt: {

@@ -350,6 +350,19 @@ const api = {
         }).json<UpdateClickHouseSettingsApiResponse>(),
     });
   },
+  useUpdateTeamInvestigationsSettings() {
+    return useMutation<
+      { investigationsEnabled: boolean },
+      HTTPError,
+      { enabled: boolean }
+    >({
+      mutationFn: async body =>
+        hdxServer(`team/investigations-settings`, {
+          method: 'PATCH',
+          json: body,
+        }).json<{ investigationsEnabled: boolean }>(),
+    });
+  },
   useTags() {
     return useQuery({
       queryKey: [`team/tags`],

@@ -24,6 +24,7 @@ import Connection, { IConnection } from '@/models/connection';
 import Dashboard from '@/models/dashboard';
 import { type ISavedSearch, SavedSearch } from '@/models/savedSearch';
 import { type ISource, Source } from '@/models/source';
+import Team from '@/models/team';
 import Webhook, { IWebhook } from '@/models/webhook';
 import {
   AggregatedAlertHistory,
@@ -47,7 +48,7 @@ const alertInvestigationDispatchCounter = getCounter(
   'hyperdx.alerts.investigation_dispatches',
   {
     description:
-      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, ambiguous, cooldown, budget, or skipped_team).',
+      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, ambiguous, cooldown, budget, disabled, or skipped_team).',
   },
 );
 
@@ -528,7 +529,9 @@ export default class DefaultAlertProvider implements AlertProvider {
       const [firstTeam] = await getAllTeams(['_id']);
       this.installationTeamId = firstTeam?._id?.toString() ?? null;
     }
-    const alertDoc = await Alert.findById(alertId).select('team');
+    const alertDoc = await Alert.findById(alertId).select(
+      'team investigationsDisabled',
+    );
     const alertTeamId = alertDoc?.team?.toString();
     if (!alertTeamId || alertTeamId !== this.installationTeamId) {
       alertInvestigationDispatchCounter.add(requestedDocs.length, {
@@ -538,6 +541,24 @@ export default class DefaultAlertProvider implements AlertProvider {
         { alertId, suppressed: requestedDocs.length },
         'Skipped agent investigation dispatches for a team without the agent credential',
       );
+      await clearAll(requestedDocs);
+      return;
+    }
+
+    // Admins can turn investigations off team-wide (and authors per alert)
+    // between marking and dispatch, so re-check both here where the docs are
+    // already loaded. Markers are cleared so a marker only ever means "an
+    // investigation was actually requested."
+    const team = await Team.findById(alertTeamId).select(
+      'investigationsEnabled',
+    );
+    if (
+      team?.investigationsEnabled === false ||
+      alertDoc?.investigationsDisabled === true
+    ) {
+      alertInvestigationDispatchCounter.add(requestedDocs.length, {
+        outcome: 'disabled',
+      });
       await clearAll(requestedDocs);
       return;
     }

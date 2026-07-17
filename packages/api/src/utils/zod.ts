@@ -672,6 +672,7 @@ export const alertSchema = z
     message: z.string().min(1).max(4096).nullish(),
     note: alertNoteSchema,
     numConsecutiveWindows: z.number().int().min(1).nullish(),
+    investigationsDisabled: z.boolean().optional(),
   })
   .and(zSavedSearchAlert.or(zTileAlert))
   .superRefine(validateAlertScheduleOffsetMinutes)
