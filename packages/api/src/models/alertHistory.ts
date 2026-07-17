@@ -5,6 +5,17 @@ import { AlertState } from '@/models/alert';
 
 import type { ObjectId } from '.';
 
+// Set when a fresh alert fire triggers an agent investigation: `requestedAt`
+// = requested, `summary` = delivered. A failed investigation simply never
+// gets a summary (at-most-once by design). `gist` is the agent's one-sentence
+// most-probable-cause headline.
+interface IAlertInvestigation {
+  requestedAt: Date;
+  summary?: string;
+  gist?: string;
+  completedAt?: Date;
+}
+
 export interface IAlertHistory {
   alert: ObjectId;
   counts: number;
@@ -13,6 +24,7 @@ export interface IAlertHistory {
   lastValues: { startTime: Date; count: number }[];
   group?: string; // For group-by alerts, stores the group identifier
   fired?: boolean;
+  investigation?: IAlertInvestigation;
 }
 
 const AlertHistorySchema = new Schema<IAlertHistory>({
@@ -50,6 +62,28 @@ const AlertHistorySchema = new Schema<IAlertHistory>({
     type: Boolean,
     required: false,
   },
+  investigation: {
+    required: false,
+    type: {
+      _id: false,
+      requestedAt: {
+        type: Date,
+        required: true,
+      },
+      summary: {
+        type: String,
+        required: false,
+      },
+      gist: {
+        type: String,
+        required: false,
+      },
+      completedAt: {
+        type: Date,
+        required: false,
+      },
+    },
+  },
 });
 
 AlertHistorySchema.index(
@@ -62,6 +96,13 @@ AlertHistorySchema.index({ alert: 1, createdAt: -1 });
 
 // Used by getPreviousAlertHistories (groups by {alert, group}, sorts by createdAt)
 AlertHistorySchema.index({ alert: 1, group: 1, createdAt: -1 });
+
+// Used by getRecentInvestigations: only histories with a delivered summary
+// are indexed, so the newest-first scan touches investigation docs only.
+AlertHistorySchema.index(
+  { createdAt: -1 },
+  { partialFilterExpression: { 'investigation.summary': { $exists: true } } },
+);
 
 export default mongoose.model<IAlertHistory>(
   'AlertHistory',

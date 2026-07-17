@@ -18,6 +18,7 @@ import {
   Group,
   Select,
   Stack,
+  Tabs,
   TextInput,
   UnstyledButton,
 } from '@mantine/core';
@@ -33,12 +34,14 @@ import {
   IconHourglass,
   IconInfoCircleFilled,
   IconNote,
+  IconReportSearch,
   IconSearch,
   IconTableRow,
 } from '@tabler/icons-react';
 
 import { AckAlert } from '@/components/alerts/AckAlert';
 import { AlertHistoryCardList } from '@/components/alerts/AlertHistoryCards';
+import { InvestigationsFeed } from '@/components/alerts/InvestigationsFeed';
 import EmptyState from '@/components/EmptyState';
 import { PageHeader } from '@/components/PageHeader';
 
@@ -331,6 +334,22 @@ export default function AlertsPage() {
   const [search, setSearch] = useQueryState('search');
   const [tagFilter, setTagFilter] = useQueryState('tag');
   const [creatorFilter, setCreatorFilter] = useQueryState('creator');
+  const [tab, setTab] = useQueryState('tab');
+
+  const {
+    data: investigationsData,
+    isLoading: investigationsLoading,
+    isError: investigationsError,
+  } = api.useAlertInvestigations();
+  const investigationCount = investigationsData?.data?.length ?? 0;
+  // Only surface the feature on deployments that enabled the agent (or that
+  // have historical summaries); everyone else sees the stock alerts page.
+  const showInvestigationsTab =
+    (investigationsData?.enabled ?? false) || investigationCount > 0;
+  const activeTab =
+    showInvestigationsTab && tab === 'investigations'
+      ? 'investigations'
+      : 'alerts';
 
   const allTags = React.useMemo(() => {
     const tags = new Set<string>();
@@ -385,70 +404,113 @@ export default function AlertsPage() {
           <div className="text-center my-4 fs-8">Error</div>
         ) : alerts?.length ? (
           <Container maw={1500}>
-            <Alert
-              icon={<IconInfoCircleFilled size={16} />}
-              color="gray"
-              py="xs"
-              mt="md"
-            >
-              Alerts can be{' '}
-              <a
-                href="https://clickhouse.com/docs/use-cases/observability/clickstack/alerts"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                created
-              </a>{' '}
-              from dashboard charts and saved searches.
-            </Alert>
-            <Flex align="center" mt="md" gap="sm" data-testid="alerts-filters">
-              <TextInput
-                placeholder="Search by name"
-                leftSection={<IconSearch size={16} />}
-                value={search ?? ''}
-                onChange={e => setSearch(e.currentTarget.value || null)}
-                style={{ flex: 1, maxWidth: 400 }}
-                miw={100}
-                data-testid="alerts-search-input"
-              />
-              {allTags.length > 0 && (
-                <Select
-                  placeholder="Filter by tag"
-                  data={allTags}
-                  value={tagFilter}
-                  onChange={v => setTagFilter(v)}
-                  clearable
-                  searchable
-                  style={{ maxWidth: 200 }}
-                  data-testid="alerts-tag-filter"
-                />
-              )}
-              {allCreators.length > 0 && (
-                <Select
-                  placeholder="Filter by creator"
-                  data={allCreators}
-                  value={creatorFilter}
-                  onChange={v => setCreatorFilter(v)}
-                  clearable
-                  searchable
-                  style={{ maxWidth: 250 }}
-                  data-testid="alerts-creator-filter"
-                />
-              )}
-            </Flex>
-            {filteredAlerts.length > 0 ? (
-              <AlertCardList alerts={filteredAlerts} />
-            ) : (
-              <EmptyState
-                variant="card"
-                icon={<IconBell size={32} />}
-                title={hasFilters ? 'No matching alerts' : 'No alerts'}
-                description={
-                  hasFilters
-                    ? 'Try adjusting your search or filters.'
-                    : 'All alerts in OK state will appear here.'
+            {showInvestigationsTab && (
+              <Tabs
+                value={activeTab}
+                onChange={value =>
+                  setTab(value === 'alerts' ? null : (value ?? null))
                 }
+                mt="md"
+              >
+                <Tabs.List>
+                  <Tabs.Tab value="alerts" leftSection={<IconBell size={14} />}>
+                    Alerts
+                  </Tabs.Tab>
+                  <Tabs.Tab
+                    value="investigations"
+                    leftSection={<IconReportSearch size={14} />}
+                    rightSection={
+                      investigationCount > 0 ? (
+                        <Badge size="xs" variant="light">
+                          {investigationCount}
+                        </Badge>
+                      ) : undefined
+                    }
+                  >
+                    Investigations
+                  </Tabs.Tab>
+                </Tabs.List>
+              </Tabs>
+            )}
+            {activeTab === 'investigations' ? (
+              <InvestigationsFeed
+                entries={investigationsData?.data ?? []}
+                isLoading={investigationsLoading}
+                isError={investigationsError}
               />
+            ) : (
+              <>
+                <Alert
+                  icon={<IconInfoCircleFilled size={16} />}
+                  color="gray"
+                  py="xs"
+                  mt="md"
+                >
+                  Alerts can be{' '}
+                  <a
+                    href="https://clickhouse.com/docs/use-cases/observability/clickstack/alerts"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    created
+                  </a>{' '}
+                  from dashboard charts and saved searches.
+                </Alert>
+                <Flex
+                  align="center"
+                  mt="md"
+                  gap="sm"
+                  data-testid="alerts-filters"
+                >
+                  <TextInput
+                    placeholder="Search by name"
+                    leftSection={<IconSearch size={16} />}
+                    value={search ?? ''}
+                    onChange={e => setSearch(e.currentTarget.value || null)}
+                    style={{ flex: 1, maxWidth: 400 }}
+                    miw={100}
+                    data-testid="alerts-search-input"
+                  />
+                  {allTags.length > 0 && (
+                    <Select
+                      placeholder="Filter by tag"
+                      data={allTags}
+                      value={tagFilter}
+                      onChange={v => setTagFilter(v)}
+                      clearable
+                      searchable
+                      style={{ maxWidth: 200 }}
+                      data-testid="alerts-tag-filter"
+                    />
+                  )}
+                  {allCreators.length > 0 && (
+                    <Select
+                      placeholder="Filter by creator"
+                      data={allCreators}
+                      value={creatorFilter}
+                      onChange={v => setCreatorFilter(v)}
+                      clearable
+                      searchable
+                      style={{ maxWidth: 250 }}
+                      data-testid="alerts-creator-filter"
+                    />
+                  )}
+                </Flex>
+                {filteredAlerts.length > 0 ? (
+                  <AlertCardList alerts={filteredAlerts} />
+                ) : (
+                  <EmptyState
+                    variant="card"
+                    icon={<IconBell size={32} />}
+                    title={hasFilters ? 'No matching alerts' : 'No alerts'}
+                    description={
+                      hasFilters
+                        ? 'Try adjusting your search or filters.'
+                        : 'All alerts in OK state will appear here.'
+                    }
+                  />
+                )}
+              </>
             )}
           </Container>
         ) : (

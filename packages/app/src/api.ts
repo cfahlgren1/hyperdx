@@ -5,6 +5,7 @@ import type {
   Alert,
   AlertApiResponse,
   AlertHistoryRangeApiResponse,
+  AlertInvestigationsApiResponse,
   AlertsApiResponse,
   InstallationApiResponse,
   MeApiResponse,
@@ -181,6 +182,15 @@ const api = {
     return useQuery({
       queryKey: api.getAlertsQueryKey(),
       queryFn: () => hdxServer(`alerts`).json<AlertsApiResponse>(),
+    });
+  },
+  useAlertInvestigations() {
+    return useQuery({
+      queryKey: ['alerts', 'investigations'] as const,
+      queryFn: () =>
+        hdxServer(
+          `alerts/investigations`,
+        ).json<AlertInvestigationsApiResponse>(),
     });
   },
   useAlert(alertId: string | undefined) {
