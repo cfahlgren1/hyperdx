@@ -8,7 +8,9 @@ import ms from 'ms';
 import { URLSearchParams } from 'url';
 
 import * as config from '@/config';
+import { ensureAgentCredential } from '@/controllers/agentInstallation';
 import { ALERT_HISTORY_QUERY_CONCURRENCY } from '@/controllers/alertHistory';
+import { getAllTeams } from '@/controllers/team';
 import { LOCAL_APP_TEAM } from '@/controllers/team';
 import { connectDB, mongooseConnection, ObjectId } from '@/models';
 import Alert, {
@@ -36,9 +38,52 @@ import {
 } from '@/tasks/checkAlerts/providers';
 import { MappedOmit } from '@/tasks/types';
 import { convertMsToGranularityString } from '@/utils/common';
+import { getCounter } from '@/utils/instrumentation';
 import logger from '@/utils/logger';
 
 type PartialAlertDetails = MappedOmit<AlertDetails, 'previousMap'>;
+
+const alertInvestigationDispatchCounter = getCounter(
+  'hyperdx.alerts.investigation_dispatches',
+  {
+    description:
+      'Count of agent investigation dispatches on a fresh alert fire, labeled by outcome (dispatched, failed, ambiguous, cooldown, budget, or skipped_team).',
+  },
+);
+
+// Bounds LLM spend when a grouped alert's groups all breach on the same tick
+// (group cardinality is telemetry-controlled, so it can be externally inflated).
+const MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION = 5;
+
+// Bounds each workflow dispatch so a stalled agent endpoint cannot accumulate
+// sockets across evaluations.
+const INVESTIGATION_DISPATCH_TIMEOUT_MS = 10_000;
+
+// At most one investigation per alert per window, so a flapping alert
+// (which crosses the fire edge on every flap) can't burn tokens.
+const INVESTIGATION_COOLDOWN_MS = 60 * 60 * 1000;
+
+// Global per-task-run budget, so a broad outage firing many alerts in one
+// sweep cannot fan out into unbounded concurrent LLM runs.
+const MAX_INVESTIGATION_DISPATCHES_PER_RUN = 10;
+
+// Remove markers from suppressed fires, so a marker only ever means "an
+// investigation was actually requested from the agent". Best-effort.
+async function clearInvestigationMarkers(
+  ids: mongoose.Types.ObjectId[],
+): Promise<void> {
+  try {
+    await AlertHistory.updateMany(
+      { _id: { $in: ids } },
+      { $unset: { investigation: '' } },
+    );
+  } catch (error) {
+    logger.warn(
+      { ids: ids.map(String), error: String(error) },
+      'Failed to clear suppressed investigation markers',
+    );
+  }
+}
 
 async function getSavedSearchDetails(
   alert: IAlert,
@@ -270,12 +315,20 @@ async function loadAlert(
 }
 
 export default class DefaultAlertProvider implements AlertProvider {
+  // Remaining global dispatch budget for this task run (see
+  // MAX_INVESTIGATION_DISPATCHES_PER_RUN).
+  private investigationBudget = MAX_INVESTIGATION_DISPATCHES_PER_RUN;
+
+  // The team whose credential the agent holds (the first team). Cached on
+  // first dispatch; null when no team exists.
+  private installationTeamId: string | null | undefined = undefined;
+
   async init() {
     await Promise.all([connectDB()]);
   }
 
   async asyncDispose() {
-    await Promise.all([mongooseConnection.close()]);
+    await mongooseConnection.close();
   }
 
   async getAlertTasks(): Promise<AlertTask[]> {
@@ -413,6 +466,233 @@ export default class DefaultAlertProvider implements AlertProvider {
       { _id: new mongoose.Types.ObjectId(alertId) },
       { $set: { state: finalState, executionErrors: errors } },
     );
+
+    // Dispatch agent investigations for freshly-fired histories that were
+    // persisted (so a real _id exists). The eval loop only sets the
+    // investigation marker when investigations are enabled, so the marker is
+    // the single gate here. Suppressed fires get their marker cleared so a
+    // marker only ever means "an investigation was actually requested". Must
+    // never break the canonical state update above.
+    const requestedDocs = historyResults
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<
+          mongoose.HydratedDocument<IAlertHistory>
+        > =>
+          result.status === 'fulfilled' && result.value.investigation != null,
+      )
+      .map(result => result.value);
+
+    if (requestedDocs.length > 0) {
+      try {
+        await this.dispatchInvestigations(alertId, requestedDocs);
+      } catch (error) {
+        logger.error(
+          { alertId, error: String(error) },
+          'Failed to dispatch agent investigations',
+        );
+      }
+    }
+  }
+
+  /**
+   * Gate a batch of freshly-fired histories (per-run budget, per-alert
+   * cooldown via an atomic claim, per-evaluation cap) and dispatch the
+   * survivors. Suppressed fires get their markers cleared. If every dispatch
+   * in the batch fails, the claim is rolled back so the next fire retries.
+   */
+  private async dispatchInvestigations(
+    alertId: string,
+    requestedDocs: mongoose.HydratedDocument<IAlertHistory>[],
+  ): Promise<void> {
+    const clearAll = (docs: { _id: mongoose.Types.ObjectId }[]) =>
+      clearInvestigationMarkers(docs.map(doc => doc._id));
+
+    if (this.investigationBudget <= 0) {
+      alertInvestigationDispatchCounter.add(requestedDocs.length, {
+        outcome: 'budget',
+      });
+      logger.warn(
+        { alertId, suppressed: requestedDocs.length },
+        'Suppressed agent investigation dispatches over the per-run budget',
+      );
+      await clearAll(requestedDocs);
+      return;
+    }
+
+    // The agent holds the first team's credential; dispatching for any other
+    // team would just fail the workflow's auth check every fire, so skip
+    // those explicitly.
+    if (this.installationTeamId === undefined) {
+      const [firstTeam] = await getAllTeams(['_id']);
+      this.installationTeamId = firstTeam?._id?.toString() ?? null;
+    }
+    const alertDoc = await Alert.findById(alertId).select('team');
+    const alertTeamId = alertDoc?.team?.toString();
+    if (!alertTeamId || alertTeamId !== this.installationTeamId) {
+      alertInvestigationDispatchCounter.add(requestedDocs.length, {
+        outcome: 'skipped_team',
+      });
+      logger.info(
+        { alertId, suppressed: requestedDocs.length },
+        'Skipped agent investigation dispatches for a team without the agent credential',
+      );
+      await clearAll(requestedDocs);
+      return;
+    }
+
+    // Compare in evaluation-time (carried on the marker), not wall clock.
+    const evalTime = new Date(
+      Math.max(
+        ...requestedDocs.map(doc => doc.investigation!.requestedAt.getTime()),
+      ),
+    );
+    const releaseClaim = () =>
+      Alert.updateOne(
+        {
+          _id: new mongoose.Types.ObjectId(alertId),
+          investigationDispatchedAt: evalTime,
+        },
+        { $unset: { investigationDispatchedAt: '' } },
+      ).catch(error =>
+        logger.warn(
+          { alertId, error: String(error) },
+          'Failed to release investigation dispatch claim',
+        ),
+      );
+    const cutoff = new Date(evalTime.getTime() - INVESTIGATION_COOLDOWN_MS);
+    const claimed = await Alert.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(alertId),
+        $or: [
+          { investigationDispatchedAt: { $exists: false } },
+          { investigationDispatchedAt: { $lt: cutoff } },
+        ],
+      },
+      { $set: { investigationDispatchedAt: evalTime } },
+    );
+    if (!claimed) {
+      alertInvestigationDispatchCounter.add(requestedDocs.length, {
+        outcome: 'cooldown',
+      });
+      logger.info(
+        { alertId, suppressed: requestedDocs.length },
+        'Suppressed agent investigation dispatches within the per-alert cooldown',
+      );
+      await clearAll(requestedDocs);
+      return;
+    }
+
+    const toDispatch = requestedDocs.slice(
+      0,
+      Math.min(
+        MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+        this.investigationBudget,
+      ),
+    );
+    const droppedDocs = requestedDocs.slice(toDispatch.length);
+    this.investigationBudget -= toDispatch.length;
+    if (droppedDocs.length > 0) {
+      alertInvestigationDispatchCounter.add(droppedDocs.length, {
+        outcome: 'failed',
+      });
+      logger.warn(
+        {
+          alertId,
+          dropped: droppedDocs.length,
+          cap: MAX_INVESTIGATION_DISPATCHES_PER_EVALUATION,
+        },
+        'Dropped agent investigation dispatches over the per-evaluation cap',
+      );
+      await clearAll(droppedDocs);
+    }
+
+    // The agent authenticates dispatches against its own credential, so forged
+    // requests from other processes on the network cannot start paid runs.
+    const credential = await ensureAgentCredential(alertTeamId).catch(error => {
+      logger.warn(
+        { alertId, error: String(error) },
+        'Failed to resolve agent credential for investigation dispatch',
+      );
+      return null;
+    });
+    if (credential == null) {
+      alertInvestigationDispatchCounter.add(toDispatch.length, {
+        outcome: 'failed',
+      });
+      await Promise.all([clearAll(toDispatch), releaseClaim()]);
+      return;
+    }
+
+    const batch = toDispatch.map(doc =>
+      this.dispatchInvestigation(alertId, doc, credential),
+    );
+    const results = await Promise.all(batch);
+    // Only definitive failures are cleaned up; an 'ambiguous' dispatch may
+    // have been admitted, so its marker and claim stay.
+    const failedDocs = toDispatch.filter((_, i) => results[i] === 'failed');
+    if (failedDocs.length > 0) {
+      await clearAll(failedDocs);
+    }
+    if (failedDocs.length === results.length) {
+      // Nothing was requested: release the claim so the next fire retries.
+      // Conditional on our own stamp so a newer claim survives.
+      await releaseClaim();
+    }
+  }
+
+  /**
+   * POST one investigation request to the agent's workflow. Only identifiers
+   * are passed — the agent looks up the alert and telemetry itself. Never
+   * throws. A timeout is 'ambiguous': the agent may have durably admitted
+   * the run before the connection gave up, so the caller must not treat it
+   * as a definitive failure.
+   */
+  private async dispatchInvestigation(
+    alertId: string,
+    history: Pick<IAlertHistory, 'group' | 'createdAt'> & {
+      _id: mongoose.Types.ObjectId;
+    },
+    credential: string,
+  ): Promise<'dispatched' | 'failed' | 'ambiguous'> {
+    try {
+      const res = await fetch(config.AGENT_WORKFLOW_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${credential}`,
+        },
+        body: JSON.stringify({
+          alertHistoryId: history._id.toString(),
+          alertId,
+          group: history.group,
+          triggeredAt: history.createdAt,
+        }),
+        signal: AbortSignal.timeout(INVESTIGATION_DISPATCH_TIMEOUT_MS),
+      });
+      alertInvestigationDispatchCounter.add(1, {
+        outcome: res.ok ? 'dispatched' : 'failed',
+      });
+      if (!res.ok) {
+        logger.warn(
+          { alertId, status: res.status },
+          'Agent investigation dispatch returned a non-OK status',
+        );
+      }
+      return res.ok ? 'dispatched' : 'failed';
+    } catch (error) {
+      const outcome =
+        error instanceof Error && error.name === 'TimeoutError'
+          ? 'ambiguous'
+          : 'failed';
+      alertInvestigationDispatchCounter.add(1, { outcome });
+      logger.warn(
+        { alertId, outcome, error: String(error) },
+        'Failed to dispatch agent investigation',
+      );
+      return outcome;
+    }
   }
 
   async recordAlertErrors(alertId: string, errors: IAlertError[]) {

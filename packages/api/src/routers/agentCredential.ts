@@ -1,7 +1,14 @@
 import express from 'express';
+import mongoose from 'mongoose';
 
-import { ensureAgentCredential } from '@/controllers/agentInstallation';
+import {
+  ensureAgentCredential,
+  findAgentInstallationByCredential,
+} from '@/controllers/agentInstallation';
 import { getAllTeams } from '@/controllers/team';
+import Alert from '@/models/alert';
+import AlertHistory from '@/models/alertHistory';
+import { setBusinessContext } from '@/utils/instrumentation';
 import logger from '@/utils/logger';
 
 // Required on every provisioning request. This is not a secret — it defends
@@ -41,6 +48,86 @@ export function createAgentCredentialApp() {
 
       const credential = await ensureAgentCredential(team._id.toString());
       return res.json({ credential });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Stores an investigation summary on the AlertHistory doc. Unlike the
+  // credential handout above this mutates Mongo, so it requires the agent
+  // credential and is scoped to that credential's team.
+  app.post('/agent/investigations', async (req, res, next) => {
+    try {
+      const key = req.headers.authorization?.split('Bearer ')[1];
+      if (!key) {
+        return res.sendStatus(401);
+      }
+
+      const installation = await findAgentInstallationByCredential(key);
+      if (!installation) {
+        return res.sendStatus(401);
+      }
+      const teamId = installation.team;
+
+      const { alertHistoryId, alertId, summary, gist } = req.body ?? {};
+      if (
+        typeof alertHistoryId !== 'string' ||
+        typeof alertId !== 'string' ||
+        typeof summary !== 'string' ||
+        typeof gist !== 'string'
+      ) {
+        return res.status(400).json({
+          error: 'alertHistoryId, alertId, summary, and gist are required',
+        });
+      }
+      if (
+        !mongoose.isValidObjectId(alertHistoryId) ||
+        !mongoose.isValidObjectId(alertId)
+      ) {
+        return res.sendStatus(404);
+      }
+
+      const history =
+        await AlertHistory.findById(alertHistoryId).select('alert');
+      if (!history) {
+        return res.sendStatus(404);
+      }
+
+      // A mismatched pair must not graft one alert's findings onto another's
+      // record.
+      if (history.alert?.toString() !== alertId) {
+        return res.sendStatus(409);
+      }
+
+      // The credential's team must own the alert before we write.
+      const alert = await Alert.findById(history.alert).select('team');
+      if (!alert || alert.team?.toString() !== teamId.toString()) {
+        return res.sendStatus(403);
+      }
+
+      setBusinessContext({ teamId: teamId.toString() });
+
+      // Only marked histories are writable and delivered summaries are
+      // immutable; the filter makes the check-and-set atomic.
+      const updated = await AlertHistory.findOneAndUpdate(
+        {
+          _id: history._id,
+          'investigation.requestedAt': { $exists: true },
+          'investigation.summary': { $exists: false },
+        },
+        {
+          $set: {
+            'investigation.summary': summary,
+            'investigation.gist': gist,
+            'investigation.completedAt': new Date(),
+          },
+        },
+      );
+      if (!updated) {
+        return res.sendStatus(409);
+      }
+
+      return res.sendStatus(204);
     } catch (e) {
       next(e);
     }

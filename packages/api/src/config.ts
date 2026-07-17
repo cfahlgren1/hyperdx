@@ -58,11 +58,13 @@ export const AGENT_CREDENTIAL_PORT = Number.parseInt(
   env.AGENT_CREDENTIAL_PORT ?? '8001',
 );
 
-// When enabled, the on-call agent's internal-only credential listener starts
-// alongside the API so the agent sidecar can provision its read-only MCP
-// credential with zero configuration.
+// When enabled, a fresh alert fire triggers an agent investigation: the alert
+// task requests the on-call agent's investigateAlert workflow, and the agent
+// writes its findings back to the internal-only credential listener.
 export const AGENT_INVESTIGATIONS_ENABLED =
   env.AGENT_INVESTIGATIONS_ENABLED === 'true';
+export const AGENT_WORKFLOW_URL =
+  env.AGENT_WORKFLOW_URL ?? 'http://agent:4010/workflows/investigateAlert';
 
 export const IS_PROMQL_ENABLED = env.ENABLE_PROMQL === 'true';
 
