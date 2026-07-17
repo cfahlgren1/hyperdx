@@ -1,0 +1,12 @@
+.git
+.nx
+.volumes
+**/.DS_Store
+**/.env*
+**/.next
+**/build
+**/coverage
+**/dist
+**/node_modules
+**/playwright-report
+**/test-results
