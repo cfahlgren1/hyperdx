@@ -157,8 +157,8 @@ const AlertForm = ({
   const groupByValue = useWatch({ control, name: 'groupBy' });
   const threshold = useWatch({ control, name: 'threshold' });
   const thresholdMax = useWatch({ control, name: 'thresholdMax' });
-  const investigationsEnabled =
-    api.useAlertInvestigations().data?.enabled === true;
+  const investigationsAvailable =
+    api.useAlertInvestigations().data !== undefined;
   const investigationsDisabled = useWatch({
     control,
     name: 'investigationsDisabled',
@@ -292,7 +292,7 @@ const AlertForm = ({
             numConsecutiveWindowsName="numConsecutiveWindows"
             numConsecutiveWindows={numConsecutiveWindows ?? undefined}
           />
-          {investigationsEnabled && (
+          {investigationsAvailable && (
             <Checkbox
               mt="xs"
               size="xs"

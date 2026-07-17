@@ -354,7 +354,7 @@ const api = {
     return useMutation<
       { investigationsEnabled: boolean },
       HTTPError,
-      { enabled: boolean }
+      { investigationsEnabled: boolean }
     >({
       mutationFn: async body =>
         hdxServer(`team/investigations-settings`, {

@@ -107,7 +107,7 @@ router.patch(
 router.patch(
   '/investigations-settings',
   processRequest({
-    body: z.object({ enabled: z.boolean() }),
+    body: z.object({ investigationsEnabled: z.boolean() }),
   }),
   async (req, res, next) => {
     try {
@@ -115,11 +115,14 @@ router.patch(
       if (teamId == null) {
         throw new Error(`User ${req.user?._id} not associated with a team`);
       }
-      await Team.updateOne(
+      const result = await Team.updateOne(
         { _id: teamId },
-        { $set: { investigationsEnabled: req.body.enabled } },
+        { $set: { investigationsEnabled: req.body.investigationsEnabled } },
       );
-      res.json({ investigationsEnabled: req.body.enabled });
+      if (result.matchedCount === 0) {
+        return res.sendStatus(404);
+      }
+      res.json({ investigationsEnabled: req.body.investigationsEnabled });
     } catch (e) {
       next(e);
     }

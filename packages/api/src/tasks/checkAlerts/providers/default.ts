@@ -510,6 +510,29 @@ export default class DefaultAlertProvider implements AlertProvider {
     const clearAll = (docs: { _id: mongoose.Types.ObjectId }[]) =>
       clearInvestigationMarkers(docs.map(doc => doc._id));
 
+    // Admins can turn investigations off team-wide (and authors per alert)
+    // between marking and dispatch, so re-check both first: a disabled fire
+    // must always label 'disabled', never 'budget' or 'skipped_team'. This is
+    // a best-effort stop — a disable landing after this read but before the
+    // POST still dispatches once. Markers are cleared so a marker only ever
+    // means "an investigation was actually requested."
+    const gateDoc = await Alert.findById(alertId).select(
+      'team investigationsDisabled',
+    );
+    const gateTeam = gateDoc?.team
+      ? await Team.findById(gateDoc.team).select('investigationsEnabled')
+      : null;
+    if (
+      gateTeam?.investigationsEnabled === false ||
+      gateDoc?.investigationsDisabled === true
+    ) {
+      alertInvestigationDispatchCounter.add(requestedDocs.length, {
+        outcome: 'disabled',
+      });
+      await clearAll(requestedDocs);
+      return;
+    }
+
     if (this.investigationBudget <= 0) {
       alertInvestigationDispatchCounter.add(requestedDocs.length, {
         outcome: 'budget',
@@ -529,9 +552,7 @@ export default class DefaultAlertProvider implements AlertProvider {
       const [firstTeam] = await getAllTeams(['_id']);
       this.installationTeamId = firstTeam?._id?.toString() ?? null;
     }
-    const alertDoc = await Alert.findById(alertId).select(
-      'team investigationsDisabled',
-    );
+    const alertDoc = await Alert.findById(alertId).select('team');
     const alertTeamId = alertDoc?.team?.toString();
     if (!alertTeamId || alertTeamId !== this.installationTeamId) {
       alertInvestigationDispatchCounter.add(requestedDocs.length, {
@@ -541,24 +562,6 @@ export default class DefaultAlertProvider implements AlertProvider {
         { alertId, suppressed: requestedDocs.length },
         'Skipped agent investigation dispatches for a team without the agent credential',
       );
-      await clearAll(requestedDocs);
-      return;
-    }
-
-    // Admins can turn investigations off team-wide (and authors per alert)
-    // between marking and dispatch, so re-check both here where the docs are
-    // already loaded. Markers are cleared so a marker only ever means "an
-    // investigation was actually requested."
-    const team = await Team.findById(alertTeamId).select(
-      'investigationsEnabled',
-    );
-    if (
-      team?.investigationsEnabled === false ||
-      alertDoc?.investigationsDisabled === true
-    ) {
-      alertInvestigationDispatchCounter.add(requestedDocs.length, {
-        outcome: 'disabled',
-      });
       await clearAll(requestedDocs);
       return;
     }
