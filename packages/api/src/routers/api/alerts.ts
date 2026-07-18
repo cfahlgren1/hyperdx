@@ -354,7 +354,13 @@ router.get('/investigations', async (req, res: InvestigationsExpRes, next) => {
       config.AGENT_INVESTIGATIONS_ENABLED &&
       team?.investigationsEnabled !== false;
     const data = await getRecentInvestigations(teamId.toString());
-    sendJson(res, { enabled, data });
+    // `available` = deployment-level flag independent of the team switch; it
+    // drives the per-alert checkbox so a team pause doesn't hide preferences.
+    sendJson(res, {
+      enabled,
+      available: config.AGENT_INVESTIGATIONS_ENABLED,
+      data,
+    });
   } catch (e) {
     next(e);
   }
