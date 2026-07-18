@@ -3,7 +3,8 @@
 AI on-call agent for self-hosted ClickStack, built on [Flue](https://flue.dev).
 When an alert fires, it investigates the underlying telemetry through
 ClickStack's MCP server and posts a root-cause summary, shown in the app under
-**Alerts → Investigations**.
+**Alerts → Investigations**. The same read-only investigator is also available
+as a durable conversational agent over Flue's HTTP API.
 
 ## Quick start
 
@@ -30,6 +31,46 @@ model with `AI_MODEL_NAME` (default `claude-sonnet-5`), or point
   credential.
 
 Assumes the single-team model of self-hosted ClickStack.
+
+## Talk to the investigator
+
+The investigator is exposed at `/agents/investigator/:conversationId` —
+conversations are durable, so the same ID resumes the same thread.
+Authenticate with your personal ClickStack API key (Team Settings → API Keys);
+the installation credential also works for internal callers.
+
+```bash
+npx flue-tui investigator --server http://127.0.0.1:4010 --token $YOUR_API_KEY
+```
+
+Or over plain HTTP (`?wait=result` blocks for the answer; omit it to stream;
+`POST .../abort` cancels):
+
+```bash
+curl -X POST \
+  'http://127.0.0.1:4010/agents/investigator/local-operator?wait=result' \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $YOUR_API_KEY" \
+  -d '{"message":"Which services produced the most errors in the last hour?"}'
+```
+
+Every session — conversational or alert-triggered — works in a sandbox seeded
+with the deployment's durable context, which the agent can grep and read:
+
+```text
+/workspace
+├── investigations/                        # past reports, one per case
+│   ├── 2026-07-16-checkout-errors.md
+│   └── 2026-07-18-clickhouse-server-errors.md
+└── memory/                                # durable notes the agent keeps
+    ├── README.md
+    └── checkout-service.md
+```
+
+Alert investigations sync new or edited `memory/` files back to ClickStack
+after each run; conversations save notes with an `update_memory` tool. Both
+are capped at 10 files x 4KB and correctable in Settings -> AI Agent, where
+team instructions also live.
 
 ## Configuration
 
