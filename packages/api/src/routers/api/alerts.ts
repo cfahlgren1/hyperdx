@@ -4,6 +4,8 @@ import type {
   AlertInvestigationsApiResponse,
   AlertsApiResponse,
   AlertsPageItem,
+  InvestigationTrajectoryApiResponse,
+  InvestigationTrajectoryStep,
 } from '@hyperdx/common-utils/dist/types';
 import express from 'express';
 import { pick } from 'lodash';
@@ -12,6 +14,7 @@ import { z } from 'zod';
 import { processRequest, validateRequest } from 'zod-express-middleware';
 
 import * as config from '@/config';
+import { ensureAgentCredential } from '@/controllers/agentInstallation';
 import {
   getAlertTransitionsInRange,
   getRecentAlertHistories,
@@ -27,7 +30,8 @@ import {
   updateAlert,
   validateAlertInput,
 } from '@/controllers/alerts';
-import { IAlertHistory } from '@/models/alertHistory';
+import Alert from '@/models/alert';
+import AlertHistory, { IAlertHistory } from '@/models/alertHistory';
 import Team from '@/models/team';
 import { PreSerialized, sendJson } from '@/utils/serialization';
 import { alertSchema, objectIdSchema } from '@/utils/zod';
@@ -124,6 +128,217 @@ router.get('/', async (req, res: AlertsExpRes, next) => {
     next(e);
   }
 });
+
+// One page of a flue run's durable event stream.
+interface FlueRunEvent {
+  type: string;
+  timestamp: string;
+  toolName?: string;
+  toolCallId?: string;
+  content?: unknown;
+  isError?: boolean;
+  result?: { content?: { type: string; text?: string }[] };
+  message?: {
+    role?: string;
+    content?: {
+      type: string;
+      text?: string;
+      id?: string;
+      arguments?: unknown;
+    }[];
+  };
+  error?: { message?: string };
+  durationMs?: number;
+  response?: {
+    usage?: {
+      input?: number;
+      output?: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+      cost?: { total?: number };
+    };
+  };
+}
+
+function trajectoryUsageFromEvents(events: FlueRunEvent[]) {
+  let inputTokens = 0;
+  let cachedTokens = 0;
+  let outputTokens = 0;
+  let costUsd = 0;
+  for (const event of events) {
+    const usage = event.type === 'turn' ? event.response?.usage : undefined;
+    if (!usage) {
+      continue;
+    }
+    inputTokens += usage.input ?? 0;
+    cachedTokens += (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+    outputTokens += usage.output ?? 0;
+    costUsd += usage.cost?.total ?? 0;
+  }
+  return inputTokens + cachedTokens + outputTokens > 0
+    ? { inputTokens, cachedTokens, outputTokens, costUsd }
+    : undefined;
+}
+
+const TRAJECTORY_MAX_PAGES = 40;
+const TRAJECTORY_MAX_STEPS = 300;
+
+function compactArgs(args: unknown): string | undefined {
+  if (args == null || typeof args !== 'object') {
+    return undefined;
+  }
+  const parts = Object.entries(args as Record<string, unknown>).map(
+    ([key, value]) => {
+      const rendered =
+        typeof value === 'string' ? value : JSON.stringify(value);
+      return `${key}=${(rendered ?? '').slice(0, 120)}`;
+    },
+  );
+  const joined = parts.join('  ');
+  return joined ? joined.slice(0, 300) : undefined;
+}
+
+function trajectoryStepsFromEvents(
+  events: FlueRunEvent[],
+): InvestigationTrajectoryStep[] {
+  // Tool call arguments arrive on the assistant message, keyed by call id.
+  const argsByCallId = new Map<string, string>();
+  for (const event of events) {
+    if (event.type !== 'message_end' || event.message?.role !== 'assistant') {
+      continue;
+    }
+    for (const block of event.message.content ?? []) {
+      if (block.type === 'toolCall' && block.id) {
+        const compact = compactArgs(block.arguments);
+        if (compact) {
+          argsByCallId.set(block.id, compact);
+        }
+      }
+    }
+  }
+
+  const steps: InvestigationTrajectoryStep[] = [];
+  const started = new Map<
+    string,
+    { step: InvestigationTrajectoryStep; startedAt: number }
+  >();
+  for (const event of events) {
+    if (steps.length >= TRAJECTORY_MAX_STEPS) {
+      break;
+    }
+    if (event.type === 'thinking_end') {
+      const text = typeof event.content === 'string' ? event.content : '';
+      if (text.trim()) {
+        steps.push({
+          type: 'thinking',
+          timestamp: event.timestamp,
+          text: text.slice(0, 2000),
+        });
+      }
+    } else if (event.type === 'tool_start') {
+      const step: InvestigationTrajectoryStep = {
+        type: 'tool',
+        timestamp: event.timestamp,
+        // Strip the MCP server prefix for display (mcp__clickstack__x -> x).
+        toolName: (event.toolName ?? 'tool').replace(/^mcp__[^_]+__/, ''),
+        input: event.toolCallId
+          ? argsByCallId.get(event.toolCallId)
+          : undefined,
+      };
+      steps.push(step);
+      if (event.toolCallId) {
+        started.set(event.toolCallId, {
+          step,
+          startedAt: new Date(event.timestamp).getTime(),
+        });
+      }
+    } else if (event.type === 'tool') {
+      const open = event.toolCallId ? started.get(event.toolCallId) : undefined;
+      if (!open) {
+        continue;
+      }
+      open.step.durationMs =
+        new Date(event.timestamp).getTime() - open.startedAt;
+      open.step.isError = !!event.isError;
+      const text = (event.result?.content ?? []).find(
+        c => c.type === 'text' && c.text,
+      )?.text;
+      if (text) {
+        open.step.result = text.slice(0, 600);
+      }
+    }
+  }
+  return steps;
+}
+
+// Registered before '/:id' so the literal prefix wins over the param route.
+type TrajectoryExpRes = express.Response<InvestigationTrajectoryApiResponse>;
+router.get(
+  '/investigations/:historyId/trajectory',
+  validateRequest({ params: z.object({ historyId: objectIdSchema }) }),
+  async (req, res: TrajectoryExpRes, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        return res.sendStatus(403);
+      }
+      const history = await AlertHistory.findById(req.params.historyId);
+      const runId = history?.investigation?.runId;
+      if (!history || !runId) {
+        return res.sendStatus(404);
+      }
+      const owned = await Alert.exists({ _id: history.alert, team: teamId });
+      if (!owned) {
+        return res.sendStatus(404);
+      }
+
+      const credential = await ensureAgentCredential(teamId.toString());
+      const base = config.AGENT_WORKFLOW_URL.replace(/\/workflows\/.*$/, '');
+      const events: FlueRunEvent[] = [];
+      let offset: string | undefined;
+      for (let page = 0; page < TRAJECTORY_MAX_PAGES; page++) {
+        const url = new URL(`${base}/runs/${runId}`);
+        if (offset) {
+          url.searchParams.set('offset', offset);
+        }
+        const upstream = await fetch(url, {
+          headers: { authorization: `Bearer ${credential}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (upstream.status === 404) {
+          // The agent's run store no longer has this run (e.g. volume reset).
+          return res.sendStatus(404);
+        }
+        if (!upstream.ok) {
+          return res.sendStatus(502);
+        }
+        const batch = (await upstream.json()) as FlueRunEvent[];
+        events.push(...batch);
+        if (
+          batch.length === 0 ||
+          batch.some(e => e.type === 'run_end') ||
+          events.length >= 5000
+        ) {
+          break;
+        }
+        const next = upstream.headers.get('stream-next-offset');
+        if (!next || next === offset) {
+          break;
+        }
+        offset = next;
+      }
+
+      const runEnd = events.find(e => e.type === 'run_end');
+      sendJson(res, {
+        status: runEnd ? (runEnd.isError ? 'errored' : 'completed') : 'running',
+        usage: trajectoryUsageFromEvents(events),
+        data: trajectoryStepsFromEvents(events),
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 // Registered before '/:id' so the literal path wins over the param route.
 type InvestigationsExpRes = express.Response<AlertInvestigationsApiResponse>;

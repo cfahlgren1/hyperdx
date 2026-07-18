@@ -189,7 +189,15 @@ export function createAgentCredentialApp() {
       }
       const teamId = installation.team;
 
-      const { alertHistoryId, alertId, summary, gist } = req.body ?? {};
+      const {
+        alertHistoryId,
+        alertId,
+        summary,
+        gist,
+        outcome,
+        confidence,
+        severity,
+      } = req.body ?? {};
       if (
         typeof alertHistoryId !== 'string' ||
         typeof alertId !== 'string' ||
@@ -198,6 +206,22 @@ export function createAgentCredentialApp() {
       ) {
         return res.status(400).json({
           error: 'alertHistoryId, alertId, summary, and gist are required',
+        });
+      }
+      // Verdict fields are optional (older agents omit them) but must be
+      // well-formed when present.
+      const OUTCOMES = ['root_cause', 'linked', 'benign', 'inconclusive'];
+      const SEVERITIES = ['P1', 'P2', 'P3'];
+      if (
+        (outcome !== undefined && !OUTCOMES.includes(outcome)) ||
+        (severity !== undefined && !SEVERITIES.includes(severity)) ||
+        (confidence !== undefined &&
+          (typeof confidence !== 'number' ||
+            confidence < 0 ||
+            confidence > 100))
+      ) {
+        return res.status(400).json({
+          error: 'outcome, confidence, or severity is malformed',
         });
       }
       if (
@@ -240,6 +264,13 @@ export function createAgentCredentialApp() {
             'investigation.summary': summary,
             'investigation.gist': gist,
             'investigation.completedAt': new Date(),
+            ...(outcome !== undefined && { 'investigation.outcome': outcome }),
+            ...(confidence !== undefined && {
+              'investigation.confidence': confidence,
+            }),
+            ...(severity !== undefined && {
+              'investigation.severity': severity,
+            }),
           },
         },
       );

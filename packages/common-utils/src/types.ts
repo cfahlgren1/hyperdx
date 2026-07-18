@@ -2139,6 +2139,7 @@ export type AlertsApiResponse = z.infer<typeof AlertsApiResponseSchema>;
 // chart history scrolls past them.
 export const AlertInvestigationItemSchema = z.object({
   alertId: z.string(),
+  alertHistoryId: z.string(),
   alertName: z.string(),
   savedSearchId: z.string().optional(),
   dashboardId: z.string().optional(),
@@ -2153,6 +2154,14 @@ export const AlertInvestigationItemSchema = z.object({
     // One-sentence most-probable-cause headline, delivered with the summary.
     gist: z.string(),
     completedAt: z.string().optional(),
+    // Whether the agent kept a run trajectory the app can fetch.
+    hasTrajectory: z.boolean().optional(),
+    // Structured verdict; absent on investigations from older agents.
+    outcome: z
+      .enum(['root_cause', 'linked', 'benign', 'inconclusive'])
+      .optional(),
+    confidence: z.number().optional(),
+    severity: z.enum(['P1', 'P2', 'P3']).optional(),
   }),
 });
 
@@ -2172,6 +2181,42 @@ export const AlertInvestigationsApiResponseSchema = z.object({
 
 export type AlertInvestigationsApiResponse = z.infer<
   typeof AlertInvestigationsApiResponseSchema
+>;
+
+// One step in an investigation run: a tool call or a reasoning block.
+export const InvestigationTrajectoryStepSchema = z.object({
+  type: z.enum(['thinking', 'tool']),
+  timestamp: z.string(),
+  // Reasoning content for 'thinking' steps.
+  text: z.string().optional(),
+  toolName: z.string().optional(),
+  // Compact serialization of the tool call arguments.
+  input: z.string().optional(),
+  durationMs: z.number().optional(),
+  isError: z.boolean().optional(),
+  result: z.string().optional(),
+});
+
+export type InvestigationTrajectoryStep = z.infer<
+  typeof InvestigationTrajectoryStepSchema
+>;
+
+export const InvestigationTrajectoryApiResponseSchema = z.object({
+  status: z.enum(['running', 'completed', 'errored']),
+  usage: z
+    .object({
+      inputTokens: z.number(),
+      // Cache reads + writes, separate from fresh input.
+      cachedTokens: z.number().optional(),
+      outputTokens: z.number(),
+      costUsd: z.number(),
+    })
+    .optional(),
+  data: z.array(InvestigationTrajectoryStepSchema),
+});
+
+export type InvestigationTrajectoryApiResponse = z.infer<
+  typeof InvestigationTrajectoryApiResponseSchema
 >;
 
 export const AlertApiResponseSchema = z.object({

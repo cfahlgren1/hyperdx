@@ -1,4 +1,8 @@
-import { defineWorkflow, type WorkflowRouteHandler } from '@flue/runtime';
+import {
+  defineWorkflow,
+  type WorkflowRouteHandler,
+  type WorkflowRunsHandler,
+} from '@flue/runtime';
 import * as v from 'valibot';
 
 import { requireInstallationCredential } from '../auth.js';
@@ -19,7 +23,7 @@ const WRITEBACK_URL = agentApiUrl('investigations');
 async function postFindings(
   alertHistoryId: string,
   alertId: string,
-  findings: { summary: string; gist: string },
+  findings: v.InferOutput<typeof output>,
 ): Promise<void> {
   const response = await fetch(WRITEBACK_URL, {
     method: 'POST',
@@ -45,6 +49,10 @@ async function postFindings(
 // start paid runs.
 export const route: WorkflowRouteHandler = requireInstallationCredential;
 
+// Exposes GET /runs/:runId so the app can show the investigation trajectory
+// (tool calls, reasoning, text), gated by the same installation credential.
+export const runs: WorkflowRunsHandler = requireInstallationCredential;
+
 // Fired by the ClickStack API on a fresh alert fire. The API passes only
 // identifiers; the agent looks up the alert definition and telemetry itself
 // via its read-only tools.
@@ -59,13 +67,33 @@ const output = v.object({
   summary: v.pipe(
     v.string(),
     v.description(
-      'Markdown investigation report: ranked hypotheses (most probable first, with competing explanations), a timeline of relevant events, supporting evidence with tool citations, then the conclusion and recommended remediation. Distinguish observed facts from hypotheses.',
+      'Concise markdown investigation report, in exactly this structure: (1) a ```mermaid fenced code block — flowchart TD — showing your hypothesis decision tree: the alert at the top, one node per hypothesis with a 3-8 word label, and under each a short verdict node with the single decisive piece of evidence; assign class confirmed or ruledout to each verdict node (the app styles those classes - do not define classDef lines). Mermaid rules: double-quoted labels, no parentheses or semicolons inside labels. (2) "## Timeline" - at most 6 bullets, each a timestamp plus one short clause. (3) "## Conclusion" - 2 to 4 plain sentences. (4) "## Fixes & unknowns" - prioritized short bullets for remediation, then anything you could not verify. No other sections, no evidence repeated across sections, under 250 words total outside the diagram.',
     ),
   ),
   gist: v.pipe(
     v.string(),
     v.description(
       'One plain sentence, no markdown, stating the most probable cause.',
+    ),
+  ),
+  outcome: v.pipe(
+    v.picklist(['root_cause', 'linked', 'benign', 'inconclusive']),
+    v.description(
+      'Verdict: root_cause = cause identified with supporting evidence; linked = downstream of another already-known issue; benign = expected behavior or noise, no real problem; inconclusive = could not isolate the cause, needs a human.',
+    ),
+  ),
+  confidence: v.pipe(
+    v.number(),
+    v.minValue(0),
+    v.maxValue(100),
+    v.description(
+      'Honest confidence in the verdict, 0-100. Do not inflate: uncorroborated hypotheses belong under 60.',
+    ),
+  ),
+  severity: v.pipe(
+    v.picklist(['P1', 'P2', 'P3']),
+    v.description(
+      'Operator triage severity of the underlying issue: P1 = urgent, user-facing or data-loss risk; P2 = degraded but contained; P3 = low urgency, cleanup or noise.',
     ),
   ),
 });

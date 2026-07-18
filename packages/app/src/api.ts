@@ -8,6 +8,7 @@ import type {
   AlertInvestigationsApiResponse,
   AlertsApiResponse,
   InstallationApiResponse,
+  InvestigationTrajectoryApiResponse,
   MeApiResponse,
   PresetDashboard,
   PresetDashboardFilter,
@@ -191,6 +192,23 @@ const api = {
         hdxServer(
           `alerts/investigations`,
         ).json<AlertInvestigationsApiResponse>(),
+    });
+  },
+  useInvestigationTrajectory(alertHistoryId: string | null) {
+    return useQuery({
+      queryKey: [
+        'alerts',
+        'investigations',
+        'trajectory',
+        alertHistoryId,
+      ] as const,
+      enabled: alertHistoryId != null,
+      // A finished run's trajectory is immutable; don't refetch on focus.
+      staleTime: Infinity,
+      queryFn: () =>
+        hdxServer(
+          `alerts/investigations/${alertHistoryId}/trajectory`,
+        ).json<InvestigationTrajectoryApiResponse>(),
     });
   },
   useAlert(alertId: string | undefined) {
