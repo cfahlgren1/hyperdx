@@ -34,17 +34,17 @@ Assumes the single-team model of self-hosted ClickStack.
 
 ## Talk to the investigator
 
-The investigator is exposed at `/agents/investigator/:conversationId`. Reuse a
-stable conversation ID to continue the same durable conversation; use a new ID
-to start with fresh context. Conversations are hydrated with the deployment's
-durable context — team instructions, agent memories, and a digest of recent
-investigations — and use the same server-enforced read-only ClickStack tools
-as automatic investigations.
+The investigator is exposed at `/agents/investigator/:conversationId` —
+conversations are durable, so the same ID resumes the same thread.
+Authenticate with your personal ClickStack API key (Team Settings → API Keys);
+the installation credential also works for internal callers.
 
-Authenticate with **your personal ClickStack API key** (Team Settings → API
-Keys); the route also accepts the installation credential for internal use.
-Personal keys are validated against the ClickStack API and must belong to the
-installation's team.
+```bash
+npx flue-tui investigator --server http://127.0.0.1:4010 --token $YOUR_API_KEY
+```
+
+Or over plain HTTP (`?wait=result` blocks for the answer; omit it to stream;
+`POST .../abort` cancels):
 
 ```bash
 curl -X POST \
@@ -54,17 +54,22 @@ curl -X POST \
   -d '{"message":"Which services produced the most errors in the last hour?"}'
 ```
 
-Omit `?wait=result` to receive stream coordinates immediately, then read the
-durable conversation from the returned `streamUrl`. `POST
-/agents/investigator/:conversationId/abort` cancels in-flight work for that
-conversation.
+Every session — conversational or alert-triggered — works in a sandbox seeded
+with the deployment's durable context, which the agent can grep and read:
 
-For an interactive terminal chat, use
-[flue-tui](https://github.com/cfahlgren1/flue-tui):
-
-```bash
-npx flue-tui investigator --server http://127.0.0.1:4010 --token $YOUR_API_KEY
+```text
+/workspace
+├── investigations/                        # past reports, one per case
+│   ├── 2026-07-16-checkout-errors.md
+│   └── 2026-07-18-clickhouse-server-errors.md
+└── memory/                                # durable notes the agent keeps
+    ├── README.md
+    └── checkout-service.md
 ```
+
+Alert investigations may write to `memory/` (synced back to ClickStack, capped
+at 10 files x 4KB); conversations read it but edits are not persisted. Team
+instructions from Settings -> AI Agent are appended to the system prompt.
 
 ## Configuration
 
