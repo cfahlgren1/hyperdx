@@ -5,6 +5,7 @@ import { requireAgentCredential } from '../auth.js';
 import {
   agentApiUrl,
   fetchAgentContext,
+  syncMemory,
   teamInstructionsNote,
   writeContextFiles,
 } from '../context.js';
@@ -90,51 +91,6 @@ function buildPrompt(data: v.InferOutput<typeof input>): string {
     'Using your read-only tools: look up this alert (clickstack_get_alert), identify its source, and query the relevant telemetry around the fire time. Then report your findings.',
   );
   return lines.join('\n');
-}
-
-/**
- * Persist the agent's memory/ edits. Reads every markdown file (except the
- * README), applies the same caps the endpoint enforces, and posts them for
- * upsert. Best-effort: memory loss must never fail a delivered investigation.
- */
-async function syncMemory(fs: {
-  readdir(path: string): Promise<string[]>;
-  readFile(path: string): Promise<string>;
-  exists(path: string): Promise<boolean>;
-}): Promise<void> {
-  try {
-    if (!(await fs.exists('memory'))) {
-      return;
-    }
-    const entries = (await fs.readdir('memory'))
-      .filter(name => name.endsWith('.md') && name !== 'README.md')
-      .slice(0, 10);
-    const memories: { slug: string; content: string }[] = [];
-    for (const name of entries) {
-      const slug = name.replace(/\.md$/, '');
-      if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug)) {
-        continue;
-      }
-      const content = (await fs.readFile(`memory/${name}`)).slice(0, 4096);
-      if (content.trim().length > 0) {
-        memories.push({ slug, content });
-      }
-    }
-    if (memories.length === 0) {
-      return;
-    }
-    await fetch(agentApiUrl('memory'), {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${clickstackCredential}`,
-      },
-      body: JSON.stringify({ memories }),
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch {
-    // best-effort by design
-  }
 }
 
 export default defineWorkflow({

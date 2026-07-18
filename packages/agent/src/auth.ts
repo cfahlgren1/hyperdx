@@ -3,8 +3,7 @@ import type { AgentRouteHandler } from '@flue/runtime';
 import { agentApiUrl } from './context.js';
 import { clickstackCredential } from './mcp.js';
 
-// Personal API keys validated against the ClickStack API are cached briefly
-// so conversational turns don't pay a validation round trip each request.
+// Validated personal keys are cached briefly to avoid per-request round trips.
 const VALIDATED_TTL_MS = 60_000;
 const VALIDATED_MAX = 100;
 const validatedUntil = new Map<string, number>();
@@ -33,17 +32,14 @@ async function isValidUserCredential(candidate: string): Promise<boolean> {
     validatedUntil.set(candidate, Date.now() + VALIDATED_TTL_MS);
     return true;
   } catch {
-    // Fail closed: if the platform is unreachable, only the installation
-    // credential is accepted.
+    // Fail closed when the platform is unreachable.
     return false;
   }
 }
 
 /**
- * Restrict paid agent entrypoints to callers holding either the provisioned
- * installation-scoped ClickStack agent credential or a personal ClickStack
- * API key from the same team (validated against the ClickStack API, mirroring
- * the MCP server's dual-credential model).
+ * Gate paid agent entrypoints behind the installation credential or a
+ * personal API key from the same team (validated against the ClickStack API).
  */
 export const requireAgentCredential: AgentRouteHandler = async (c, next) => {
   const authorization = c.req.header('authorization');
