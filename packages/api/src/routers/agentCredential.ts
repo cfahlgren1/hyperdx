@@ -7,6 +7,7 @@ import {
 } from '@/controllers/agentInstallation';
 import { getRecentInvestigations } from '@/controllers/alertHistory';
 import { getAllTeams } from '@/controllers/team';
+import AgentMemory from '@/models/agentMemory';
 import Alert from '@/models/alert';
 import AlertHistory from '@/models/alertHistory';
 import { setBusinessContext } from '@/utils/instrumentation';
@@ -70,7 +71,59 @@ export function createAgentCredentialApp() {
         installation.team.toString(),
         50,
       );
-      return res.json({ data });
+      const memories = await AgentMemory.find({ team: installation.team })
+        .select('slug content')
+        .limit(20);
+      return res.json({
+        data,
+        memories: memories.map(m => ({ slug: m.slug, content: m.content })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Syncs the agent's memory/ directory after a run. Hard caps keep
+  // telemetry-derived text from becoming unbounded durable context, and the
+  // credential -> team resolution keeps memories tenant-scoped.
+  app.post('/agent/memory', async (req, res, next) => {
+    try {
+      const key = req.headers.authorization?.split('Bearer ')[1];
+      if (!key) {
+        return res.sendStatus(401);
+      }
+      const installation = await findAgentInstallationByCredential(key);
+      if (!installation) {
+        return res.sendStatus(401);
+      }
+
+      const { memories } = req.body ?? {};
+      if (!Array.isArray(memories) || memories.length > 10) {
+        return res.status(400).json({ error: 'memories: array of at most 10' });
+      }
+      for (const m of memories) {
+        if (
+          typeof m?.slug !== 'string' ||
+          !/^[a-z0-9][a-z0-9-]{0,59}$/.test(m.slug) ||
+          typeof m?.content !== 'string' ||
+          m.content.length === 0 ||
+          m.content.length > 4096
+        ) {
+          return res.status(400).json({
+            error:
+              'each memory needs a kebab-case slug and content <= 4096 chars',
+          });
+        }
+      }
+
+      for (const m of memories) {
+        await AgentMemory.findOneAndUpdate(
+          { team: installation.team, slug: m.slug },
+          { $set: { content: m.content } },
+          { upsert: true },
+        );
+      }
+      return res.sendStatus(204);
     } catch (e) {
       next(e);
     }
