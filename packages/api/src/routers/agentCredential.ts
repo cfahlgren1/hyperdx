@@ -5,6 +5,7 @@ import {
   ensureAgentCredential,
   findAgentInstallationByCredential,
 } from '@/controllers/agentInstallation';
+import { getRecentInvestigations } from '@/controllers/alertHistory';
 import { getAllTeams } from '@/controllers/team';
 import Alert from '@/models/alert';
 import AlertHistory from '@/models/alertHistory';
@@ -48,6 +49,28 @@ export function createAgentCredentialApp() {
 
       const credential = await ensureAgentCredential(team._id.toString());
       return res.json({ credential });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Lists recent completed investigations so the agent can materialize them
+  // into its sandbox filesystem (grep-able context for recurring alerts).
+  app.get('/agent/investigations', async (req, res, next) => {
+    try {
+      const key = req.headers.authorization?.split('Bearer ')[1];
+      if (!key) {
+        return res.sendStatus(401);
+      }
+      const installation = await findAgentInstallationByCredential(key);
+      if (!installation) {
+        return res.sendStatus(401);
+      }
+      const data = await getRecentInvestigations(
+        installation.team.toString(),
+        50,
+      );
+      return res.json({ data });
     } catch (e) {
       next(e);
     }
