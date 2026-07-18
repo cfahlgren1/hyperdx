@@ -1,6 +1,7 @@
 import { defineAgent } from '@flue/runtime';
 
 import { clickstackTools } from './mcp.js';
+import { webTools } from './tools/web.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
@@ -26,5 +27,5 @@ function getModel() {
 export const investigatorAgent = defineAgent(() => ({
   instructions,
   model: getModel(),
-  tools: clickstackTools,
+  tools: [...clickstackTools, ...webTools],
 }));
