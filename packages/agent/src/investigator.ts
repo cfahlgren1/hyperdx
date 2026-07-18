@@ -1,7 +1,6 @@
 import { defineAgent } from '@flue/runtime';
 
 import { clickstackTools } from './mcp.js';
-import { githubTools } from './tools/github.js';
 import { webTools } from './tools/web.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
@@ -31,7 +30,7 @@ export function investigatorConfig() {
   return {
     instructions,
     model: getModel(),
-    tools: [...clickstackTools, ...webTools, ...githubTools],
+    tools: [...clickstackTools, ...webTools],
   };
 }
 

@@ -72,11 +72,6 @@ after each run; conversations save notes with an `update_memory` tool. Both
 are capped at 10 files x 4KB and correctable in Settings -> AI Agent, where
 team instructions also live.
 
-With `GITHUB_TOKEN` set (and optionally `GITHUB_REPO` as an `owner/repo`
-default), the investigator can also read the codebase while investigating:
-search code, read files, and search or read issues and pull requests — all
-read-only.
-
 ## Configuration
 
 Set on the `app` service:
