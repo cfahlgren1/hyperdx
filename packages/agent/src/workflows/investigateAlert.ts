@@ -1,7 +1,7 @@
 import { defineWorkflow, type WorkflowRouteHandler } from '@flue/runtime';
 import * as v from 'valibot';
 
-import { requireAgentCredential } from '../auth.js';
+import { requireInstallationCredential } from '../auth.js';
 import {
   agentApiUrl,
   fetchAgentContext,
@@ -43,7 +43,7 @@ async function postFindings(
 // does not expose it — only `flue dev` serves route-less workflows) and
 // requires the agent's own credential so network reachability alone cannot
 // start paid runs.
-export const route: WorkflowRouteHandler = requireAgentCredential;
+export const route: WorkflowRouteHandler = requireInstallationCredential;
 
 // Fired by the ClickStack API on a fresh alert fire. The API passes only
 // identifiers; the agent looks up the alert definition and telemetry itself
@@ -113,7 +113,11 @@ export default defineWorkflow({
     );
 
     await postFindings(ctx.input.alertHistoryId, ctx.input.alertId, findings);
-    await syncMemory(ctx.harness.fs);
+    await syncMemory(
+      ctx.harness.fs,
+      '',
+      Object.fromEntries(context.memories.map(m => [m.slug, m.content])),
+    );
 
     return findings;
   },

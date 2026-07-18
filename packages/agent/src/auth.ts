@@ -37,8 +37,20 @@ async function isValidUserCredential(candidate: string): Promise<boolean> {
   }
 }
 
+/** Gate workflow entrypoints behind exactly the installation credential. */
+export const requireInstallationCredential: AgentRouteHandler = async (
+  c,
+  next,
+) => {
+  const authorization = c.req.header('authorization');
+  if (authorization !== `Bearer ${clickstackCredential}`) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  return next();
+};
+
 /**
- * Gate paid agent entrypoints behind the installation credential or a
+ * Gate conversational entrypoints behind the installation credential or a
  * personal API key from the same team (validated against the ClickStack API).
  */
 export const requireAgentCredential: AgentRouteHandler = async (c, next) => {
