@@ -14,6 +14,19 @@ if (process.env.ANTHROPIC_BASE_URL) {
   });
 }
 
+if (process.env.AI_GATEWAY_API_KEY) {
+  // Vercel AI Gateway over its OpenAI-compatible endpoint: one key for every
+  // gateway provider, selected as AI_MODEL_NAME=gateway/<provider>/<model>
+  // (e.g. gateway/openai/gpt-5.4).
+  registerProvider('gateway', {
+    api: 'openai-completions',
+    baseUrl: 'https://ai-gateway.vercel.sh/v1',
+    apiKey: process.env.AI_GATEWAY_API_KEY,
+    maxTokens: 32_000,
+    contextWindow: 200_000,
+  });
+}
+
 const app = new Hono();
 
 app.get('/health', c => c.json({ ok: true }));

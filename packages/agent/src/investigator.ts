@@ -16,13 +16,20 @@ Your workspace holds this deployment's case history: investigations/ contains pa
 Structure investigation findings so alternatives stay visible: ranked hypotheses first (most probable first, including the competing explanations you considered and what would confirm or rule each out), then a timeline of the relevant events, then the supporting evidence with tool citations, then your conclusion with concrete, prioritized remediation — immediate mitigation first, then the durable fix. You recommend fixes; you cannot apply them. You have no write access: never claim to have changed any system.`;
 
 function getModel(): string {
-  if (!process.env.ANTHROPIC_API_KEY?.trim()) {
+  const name = process.env.AI_MODEL_NAME?.trim() || DEFAULT_MODEL;
+  // A full `provider/model` specifier selects any registered flue provider
+  // (openai/gpt-5.4, openrouter/..., a custom gateway, ...); a bare model
+  // name keeps the anthropic default.
+  const model = name.includes('/') ? name : `anthropic/${name}`;
+  if (
+    model.startsWith('anthropic/') &&
+    !process.env.ANTHROPIC_API_KEY?.trim()
+  ) {
     throw new Error(
-      'ANTHROPIC_API_KEY is required to run the ClickStack agent.',
+      'ANTHROPIC_API_KEY is required to run the ClickStack agent with an anthropic/* model.',
     );
   }
-
-  return `anthropic/${process.env.AI_MODEL_NAME?.trim() || DEFAULT_MODEL}`;
+  return model;
 }
 
 /** Shared runtime config for both the workflow and the conversational route. */
