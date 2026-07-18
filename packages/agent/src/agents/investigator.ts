@@ -24,52 +24,35 @@ export const route: AgentRouteHandler = requireAgentCredential;
 
 const WORKSPACE = '/workspace';
 const MAX_TRACKED_CONVERSATIONS = 50;
-const MAX_SANDBOXES_PER_CONVERSATION = 4;
 
 interface TrackedSandbox {
   bash: BashLike;
   seededMemory: Record<string, string>;
 }
 
-// Conversation sandboxes by instance id, so memory/ edits can be synced back
-// to ClickStack when the agent goes idle (mirroring the workflow's post-run
-// sync). Flue may initialize several harnesses per conversation, so every
-// recent sandbox is kept and synced: untouched ones diff to nothing, and
-// syncMemory updates each snapshot in place after a successful post.
-const sandboxes = new Map<string, TrackedSandbox[]>();
+// Latest sandbox per conversation, so memory/ edits can be synced back to
+// ClickStack when the agent goes idle (mirroring the workflow's post-run
+// sync). Best-effort: an edit in a sandbox flue has since replaced is lost.
+const sandboxes = new Map<string, TrackedSandbox>();
 
 observe(event => {
   if (event.type !== 'idle' || event.instanceId === undefined) {
     return;
   }
   const tracked = sandboxes.get(event.instanceId);
-  if (tracked === undefined) {
-    return;
-  }
-  for (const entry of tracked) {
-    void syncMemory(entry.bash.fs, `${WORKSPACE}/`, entry.seededMemory);
+  if (tracked !== undefined) {
+    void syncMemory(tracked.bash.fs, `${WORKSPACE}/`, tracked.seededMemory);
   }
 });
 
 function track(id: string, entry: TrackedSandbox): void {
-  const existing = sandboxes.get(id);
-  if (existing !== undefined) {
-    existing.push(entry);
-    if (existing.length > MAX_SANDBOXES_PER_CONVERSATION) {
-      existing.shift();
-    }
-    // Refresh LRU position: most recently active conversations evict last.
-    sandboxes.delete(id);
-    sandboxes.set(id, existing);
-    return;
-  }
-  if (sandboxes.size >= MAX_TRACKED_CONVERSATIONS) {
+  if (!sandboxes.has(id) && sandboxes.size >= MAX_TRACKED_CONVERSATIONS) {
     const oldest = sandboxes.keys().next().value;
     if (oldest !== undefined) {
       sandboxes.delete(oldest);
     }
   }
-  sandboxes.set(id, [entry]);
+  sandboxes.set(id, entry);
 }
 
 // Conversations get the same seeded workspace an investigation run gets.
