@@ -7,6 +7,7 @@ const GITHUB_REPO = process.env.GITHUB_REPO?.trim() ?? '';
 
 const MAX_RESULTS = 10;
 const MAX_BODY_CHARS = 2000;
+const MAX_FILE_CHARS = 30_000;
 
 interface GithubIssue {
   number: number;
@@ -16,6 +17,17 @@ interface GithubIssue {
   updated_at: string;
   body?: string | null;
   labels?: { name?: string }[];
+}
+
+interface GithubCodeResult {
+  path: string;
+  html_url: string;
+}
+
+interface GithubContent {
+  type: string;
+  path: string;
+  content?: string;
 }
 
 interface GithubComment {
@@ -114,14 +126,12 @@ const getIssue = defineTool({
   },
 });
 
-const createIssue = defineTool({
-  name: 'github_create_issue',
+const searchCode = defineTool({
+  name: 'github_search_code',
   description:
-    'Create a GitHub issue. Only use this when the user explicitly asks you to file an issue. Include your evidence and remediation suggestions in the body, and tell the user the issue URL.',
+    'Search source code on GitHub. Useful for finding where an implicated service, config value, error message, or query lives in the codebase. Returns matching file paths with URLs.',
   input: v.object({
-    title: v.pipe(v.string(), v.minLength(4), v.maxLength(200)),
-    body: v.pipe(v.string(), v.minLength(1), v.maxLength(20_000)),
-    labels: v.optional(v.array(v.pipe(v.string(), v.maxLength(50)))),
+    query: v.pipe(v.string(), v.minLength(2), v.maxLength(200)),
     repo: repoInput,
   }),
   run: async ({ input }) => {
@@ -129,26 +139,60 @@ const createIssue = defineTool({
     if (!repo) {
       return 'No repository given and GITHUB_REPO is not configured.';
     }
-    const result = await github(`/repos/${repo}/issues`, {
-      method: 'POST',
-      body: {
-        title: input.title,
-        body: input.body,
-        labels: input.labels,
-      },
-    });
+    const q = `${input.query} repo:${repo}`;
+    const result = await github(
+      `/search/code?per_page=${MAX_RESULTS}&q=${encodeURIComponent(q)}`,
+    );
     if (!result.ok) {
-      return `GitHub issue creation failed (${result.status}).`;
+      return `GitHub code search failed (${result.status}).`;
     }
-    return `Created ${(result.json as GithubIssue).html_url}`;
+    const items =
+      (result.json as { items?: GithubCodeResult[] } | undefined)?.items ?? [];
+    if (items.length === 0) {
+      return 'No matching code.';
+    }
+    return items.map(item => `${item.path}\n${item.html_url}`).join('\n\n');
   },
 });
 
-/** Read tools for every session; empty when GITHUB_TOKEN is unset. */
-export const githubReadTools = GITHUB_TOKEN ? [searchIssues, getIssue] : [];
+const readFile = defineTool({
+  name: 'github_read_file',
+  description:
+    'Read a file (or list a directory) from a GitHub repository. Paths are repo-relative; omit path or pass "" for the repository root.',
+  input: v.object({
+    path: v.optional(v.pipe(v.string(), v.maxLength(500)), ''),
+    repo: repoInput,
+    ref: v.optional(v.pipe(v.string(), v.maxLength(100))),
+  }),
+  run: async ({ input }) => {
+    const repo = resolveRepo(input.repo);
+    if (!repo) {
+      return 'No repository given and GITHUB_REPO is not configured.';
+    }
+    const ref = input.ref ? `?ref=${encodeURIComponent(input.ref)}` : '';
+    const result = await github(
+      `/repos/${repo}/contents/${input.path.replace(/^\/+/, '')}${ref}`,
+    );
+    if (!result.ok) {
+      return `GitHub read failed (${result.status}).`;
+    }
+    if (Array.isArray(result.json)) {
+      return (result.json as GithubContent[])
+        .map(entry => `${entry.type === 'dir' ? 'dir ' : 'file'} ${entry.path}`)
+        .join('\n');
+    }
+    const file = result.json as GithubContent;
+    if (file.type !== 'file' || typeof file.content !== 'string') {
+      return `Not a readable file (type: ${file.type}).`;
+    }
+    const text = Buffer.from(file.content, 'base64').toString('utf8');
+    return text.length > MAX_FILE_CHARS
+      ? `${text.slice(0, MAX_FILE_CHARS)}\n... truncated (${text.length} chars total)`
+      : text;
+  },
+});
 
-/**
- * Issue creation is conversation-only: automated alert investigations stay
- * read-only, a human in the loop has to ask for an issue.
- */
-export const githubWriteTools = GITHUB_TOKEN ? [createIssue] : [];
+/** Read-only GitHub tools for every session; empty when GITHUB_TOKEN is unset. */
+export const githubTools = GITHUB_TOKEN
+  ? [searchIssues, getIssue, searchCode, readFile]
+  : [];

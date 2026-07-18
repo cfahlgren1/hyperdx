@@ -8,7 +8,6 @@ import {
   fetchAgentContext,
 } from '../context.js';
 import { investigatorConfig } from '../investigator.js';
-import { githubWriteTools } from '../tools/github.js';
 import { updateMemory } from '../tools/memory.js';
 
 export const description =
@@ -33,7 +32,7 @@ export default defineAgent(async () => {
   return {
     ...base,
     instructions: base.instructions + conversationContextNote(context),
-    tools: [...base.tools, updateMemory, ...githubWriteTools],
+    tools: [...base.tools, updateMemory],
     cwd: WORKSPACE,
     sandbox: bash(() => new Bash({ files, cwd: WORKSPACE })),
   };
