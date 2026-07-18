@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Stack, Switch, Text } from '@mantine/core';
+import { Card, Group, Stack, Switch, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 
 import api from '@/api';
@@ -46,15 +46,22 @@ export default function TeamInvestigationsSection() {
         <Text>AI Investigations</Text>
       </Card.Section>
       <Card.Section p="md">
-        <Stack gap="xs">
+        <Group justify="space-between" wrap="nowrap" align="flex-start">
+          <Stack gap={2}>
+            <Text size="sm">
+              Investigate fresh alert fires with the on-call agent
+            </Text>
+            <Text size="xs" c="dimmed">
+              When off, no alert in this team dispatches investigations,
+              regardless of per-alert settings. Existing summaries stay visible.
+            </Text>
+          </Stack>
           <Switch
-            label="Investigate fresh alert fires with the on-call agent"
-            description="When off, no alert in this team dispatches investigations, regardless of per-alert settings. Existing summaries stay visible."
             checked={enabled}
             onChange={event => onToggle(event.currentTarget.checked)}
             disabled={updateSettings.isPending}
           />
-        </Stack>
+        </Group>
       </Card.Section>
     </Card>
   );
