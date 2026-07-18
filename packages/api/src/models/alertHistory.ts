@@ -14,6 +14,13 @@ interface IAlertInvestigation {
   summary?: string;
   gist?: string;
   completedAt?: Date;
+  // Flue workflow run id, kept so the app can fetch the run's event
+  // trajectory (tool calls, reasoning) from the agent.
+  runId?: string;
+  // Structured verdict delivered with the summary.
+  outcome?: 'root_cause' | 'linked' | 'benign' | 'inconclusive';
+  confidence?: number;
+  severity?: 'P1' | 'P2' | 'P3';
 }
 
 export interface IAlertHistory {
@@ -80,6 +87,22 @@ const AlertHistorySchema = new Schema<IAlertHistory>({
       },
       completedAt: {
         type: Date,
+        required: false,
+      },
+      runId: {
+        type: String,
+        required: false,
+      },
+      outcome: {
+        type: String,
+        required: false,
+      },
+      confidence: {
+        type: Number,
+        required: false,
+      },
+      severity: {
+        type: String,
         required: false,
       },
     },

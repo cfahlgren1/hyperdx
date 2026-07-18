@@ -703,8 +703,19 @@ export default class DefaultAlertProvider implements AlertProvider {
           { alertId, status: res.status },
           'Agent investigation dispatch returned a non-OK status',
         );
+        return 'failed';
       }
-      return res.ok ? 'dispatched' : 'failed';
+      // Keep the workflow run id so the app can show the trajectory later.
+      const body = (await res.json().catch(() => undefined)) as
+        | { runId?: string }
+        | undefined;
+      if (body?.runId) {
+        await AlertHistory.updateOne(
+          { _id: history._id },
+          { $set: { 'investigation.runId': body.runId } },
+        );
+      }
+      return 'dispatched';
     } catch (error) {
       const outcome =
         error instanceof Error && error.name === 'TimeoutError'

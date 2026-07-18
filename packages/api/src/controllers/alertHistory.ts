@@ -144,6 +144,7 @@ export async function getRecentAlertHistoriesBatch(
 
 export type RecentInvestigation = {
   alertId: string;
+  alertHistoryId: string;
   alertName: string;
   savedSearchId?: string;
   dashboardId?: string;
@@ -152,9 +153,15 @@ export type RecentInvestigation = {
   state: AlertState;
   counts: number;
   group?: string;
-  investigation: NonNullable<IAlertHistory['investigation']> & {
+  investigation: {
+    requestedAt: Date;
     summary: string;
     gist: string;
+    completedAt?: Date;
+    hasTrajectory: boolean;
+    outcome?: 'root_cause' | 'linked' | 'benign' | 'inconclusive';
+    confidence?: number;
+    severity?: 'P1' | 'P2' | 'P3';
   };
 };
 
@@ -198,6 +205,7 @@ export async function getRecentInvestigations(
     return [
       {
         alertId: alert._id.toString(),
+        alertHistoryId: history._id.toString(),
         alertName:
           alert.savedSearch?.name ??
           alert.dashboard?.name ??
@@ -210,8 +218,16 @@ export async function getRecentInvestigations(
         state: history.state,
         counts: history.counts,
         group: history.group,
-        investigation:
-          history.investigation as RecentInvestigation['investigation'],
+        investigation: {
+          requestedAt: history.investigation.requestedAt,
+          summary: history.investigation.summary,
+          gist: history.investigation.gist ?? '',
+          completedAt: history.investigation.completedAt,
+          hasTrajectory: !!history.investigation.runId,
+          outcome: history.investigation.outcome,
+          confidence: history.investigation.confidence,
+          severity: history.investigation.severity,
+        },
       },
     ];
   });
