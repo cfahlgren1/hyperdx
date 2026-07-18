@@ -38,6 +38,10 @@ export default mongoose.model<ITeam>(
         type: Boolean,
         default: true,
       },
+      agentInstructions: {
+        type: String,
+        default: undefined,
+      },
       // TODO: maybe add these to a top level Mixed type
       // CH Client Settings
       metadataMaxRowsToRead: Number,

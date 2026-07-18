@@ -1,3 +1,4 @@
+import agentMemoriesRouter from './agentMemories';
 import aiRouter from './ai';
 import alertsRouter from './alerts';
 import dashboardRouter from './dashboards';
@@ -14,6 +15,7 @@ export default {
   meRouter,
   prometheusRouter,
   rootRouter,
+  agentMemoriesRouter,
   teamRouter,
   webhooksRouter,
 };

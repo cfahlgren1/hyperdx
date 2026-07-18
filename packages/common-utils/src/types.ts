@@ -1672,6 +1672,9 @@ export const TeamSchema = z
     // Team-level switch for on-call agent investigations; defaults true so an
     // enabled deployment investigates unless an admin turns it off.
     investigationsEnabled: z.boolean().optional(),
+    // Team-authored context injected into the agent's investigation prompt
+    // (an agents.md); editable only by users, never by the agent.
+    agentInstructions: z.string().optional(),
   })
   .merge(TeamClickHouseSettingsSchema);
 
@@ -2224,6 +2227,7 @@ export const TeamApiResponseSchema = z.object({
   name: z.string(),
   createdAt: z.string(),
   investigationsEnabled: z.boolean().optional(),
+  agentInstructions: z.string().optional(),
 });
 
 export type TeamApiResponse = z.infer<typeof TeamApiResponseSchema>;

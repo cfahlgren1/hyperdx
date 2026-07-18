@@ -363,6 +363,43 @@ const api = {
         }).json<{ investigationsEnabled: boolean }>(),
     });
   },
+  useAgentMemories() {
+    return useQuery({
+      queryKey: ['agent-memories'] as const,
+      queryFn: () =>
+        hdxServer(`agent-memories`).json<{
+          data: { slug: string; content: string; updatedAt: string }[];
+        }>(),
+    });
+  },
+  useSaveAgentMemory() {
+    return useMutation<Response, HTTPError, { slug: string; content: string }>({
+      mutationFn: async ({ slug, content }) =>
+        hdxServer(`agent-memories/${slug}`, {
+          method: 'PUT',
+          json: { content },
+        }),
+    });
+  },
+  useDeleteAgentMemory() {
+    return useMutation<Response, HTTPError, { slug: string }>({
+      mutationFn: async ({ slug }) =>
+        hdxServer(`agent-memories/${slug}`, { method: 'DELETE' }),
+    });
+  },
+  useUpdateAgentInstructions() {
+    return useMutation<
+      { agentInstructions: string },
+      HTTPError,
+      { agentInstructions: string }
+    >({
+      mutationFn: async body =>
+        hdxServer(`team/agent-instructions`, {
+          method: 'PATCH',
+          json: body,
+        }).json<{ agentInstructions: string }>(),
+    });
+  },
   useTags() {
     return useQuery({
       queryKey: [`team/tags`],
