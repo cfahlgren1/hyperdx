@@ -1,7 +1,8 @@
 import { defineWorkflow, type WorkflowRouteHandler } from '@flue/runtime';
 import * as v from 'valibot';
 
-import { investigatorAgent } from '../investigator.js';
+import assistantAgent from '../agents/assistant.js';
+import { requireAgentCredential } from '../auth.js';
 import { clickstackCredential } from '../mcp.js';
 
 const WRITEBACK_URL =
@@ -37,13 +38,7 @@ async function postFindings(
 // does not expose it — only `flue dev` serves route-less workflows) and
 // requires the agent's own credential so network reachability alone cannot
 // start paid runs.
-export const route: WorkflowRouteHandler = async (c, next) => {
-  const authorization = c.req.header('authorization');
-  if (authorization !== `Bearer ${clickstackCredential}`) {
-    return c.json({ error: 'unauthorized' }, 401);
-  }
-  return next();
-};
+export const route: WorkflowRouteHandler = requireAgentCredential;
 
 // Fired by the ClickStack API on a fresh alert fire. The API passes only
 // identifiers; the agent looks up the alert definition and telemetry itself
@@ -204,7 +199,7 @@ async function syncMemory(fs: {
 }
 
 export default defineWorkflow({
-  agent: investigatorAgent,
+  agent: assistantAgent,
   input,
   output,
   async run(ctx) {

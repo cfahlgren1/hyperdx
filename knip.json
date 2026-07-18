@@ -6,6 +6,7 @@
         "flue.config.ts",
         "src/app.ts",
         "src/db.ts",
+        "src/agents/**/*.ts",
         "src/workflows/**/*.ts"
       ],
       "project": ["src/**/*.ts"]
