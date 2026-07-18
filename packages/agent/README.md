@@ -18,6 +18,14 @@ ClickStack credential and starts investigating fresh alert fires. Override the
 model with `AI_MODEL_NAME` (default `claude-sonnet-5`), or point
 `ANTHROPIC_BASE_URL` at any Anthropic-compatible endpoint.
 
+`AI_MODEL_NAME` also accepts a full `provider/model` specifier to run on a
+non-Anthropic provider — e.g. `openai/gpt-5.4` (needs `OPENAI_API_KEY`) or
+`openrouter/deepseek/deepseek-r1` (needs `OPENROUTER_API_KEY`). A bare model
+name keeps the `anthropic/` default. With `AI_GATEWAY_API_KEY` set, the
+[Vercel AI Gateway](https://vercel.com/docs/ai-gateway) is available as the
+`gateway` provider — one key for any gateway model, e.g.
+`AI_MODEL_NAME=gateway/zai/glm-4.7`.
+
 ## How investigations behave
 
 - One investigation per fresh fire (the OK→ALERT edge) — never per tick of a
