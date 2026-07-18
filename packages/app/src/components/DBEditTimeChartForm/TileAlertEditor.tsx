@@ -65,8 +65,10 @@ export function TileAlertEditor({
 }) {
   const [opened, { toggle }] = useDisclosure(true);
 
-  const investigationsAvailable =
-    api.useAlertInvestigations().data !== undefined;
+  const investigationsData = api.useAlertInvestigations().data;
+  const investigationsAvailable = investigationsData?.available === true;
+  const investigationsTeamPaused =
+    investigationsAvailable && investigationsData?.enabled === false;
   const alertInvestigationsDisabled = useWatch({
     control,
     name: 'alert.investigationsDisabled',
@@ -257,6 +259,12 @@ export function TileAlertEditor({
               size="xs"
               label="Investigate with the on-call agent when this alert fires"
               checked={alertInvestigationsDisabled !== true}
+              disabled={investigationsTeamPaused}
+              description={
+                investigationsTeamPaused
+                  ? 'Paused team-wide in Team Settings; this preference applies once re-enabled'
+                  : undefined
+              }
               onChange={event =>
                 setValue(
                   'alert.investigationsDisabled',

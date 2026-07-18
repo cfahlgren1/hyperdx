@@ -157,8 +157,10 @@ const AlertForm = ({
   const groupByValue = useWatch({ control, name: 'groupBy' });
   const threshold = useWatch({ control, name: 'threshold' });
   const thresholdMax = useWatch({ control, name: 'thresholdMax' });
-  const investigationsAvailable =
-    api.useAlertInvestigations().data !== undefined;
+  const investigationsData = api.useAlertInvestigations().data;
+  const investigationsAvailable = investigationsData?.available === true;
+  const investigationsTeamPaused =
+    investigationsAvailable && investigationsData?.enabled === false;
   const investigationsDisabled = useWatch({
     control,
     name: 'investigationsDisabled',
@@ -298,6 +300,12 @@ const AlertForm = ({
               size="xs"
               label="Investigate with the on-call agent when this alert fires"
               checked={investigationsDisabled !== true}
+              disabled={investigationsTeamPaused}
+              description={
+                investigationsTeamPaused
+                  ? 'Paused team-wide in Team Settings; this preference applies once re-enabled'
+                  : undefined
+              }
               onChange={event =>
                 setValue('investigationsDisabled', !event.target.checked, {
                   shouldDirty: true,
