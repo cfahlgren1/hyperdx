@@ -170,7 +170,7 @@ export default function TeamPage() {
     },
     {
       value: 'agent',
-      label: 'AI Agent',
+      label: 'Investigation Agent',
       sections: [
         {
           id: 'team-agent-investigations',

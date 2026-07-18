@@ -77,7 +77,7 @@ with the deployment's durable context, which the agent can grep and read:
 
 Alert investigations sync new or edited `memory/` files back to ClickStack
 after each run; conversations save notes with an `update_memory` tool. Both
-are capped at 10 files x 4KB and correctable in Settings -> AI Agent, where
+are capped at 10 files x 4KB and correctable in Settings -> Investigation Agent, where
 team instructions also live.
 
 ## Configuration
