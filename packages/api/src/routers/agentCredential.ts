@@ -10,6 +10,7 @@ import { getAllTeams } from '@/controllers/team';
 import AgentMemory from '@/models/agentMemory';
 import Alert from '@/models/alert';
 import AlertHistory from '@/models/alertHistory';
+import Team from '@/models/team';
 import { setBusinessContext } from '@/utils/instrumentation';
 import logger from '@/utils/logger';
 
@@ -74,9 +75,13 @@ export function createAgentCredentialApp() {
       const memories = await AgentMemory.find({ team: installation.team })
         .select('slug content')
         .limit(20);
+      const team = await Team.findById(installation.team).select(
+        'agentInstructions',
+      );
       return res.json({
         data,
         memories: memories.map(m => ({ slug: m.slug, content: m.content })),
+        instructions: team?.agentInstructions ?? '',
       });
     } catch (e) {
       next(e);

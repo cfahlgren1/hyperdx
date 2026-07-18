@@ -53,6 +53,7 @@ router.get('/', async (req, res: TeamApiExpRes, next) => {
       'name',
       'createdAt',
       'investigationsEnabled',
+      'agentInstructions',
     ] as const;
     const team = await getTeam(teamId, fields);
     if (team == null) {
@@ -98,6 +99,31 @@ router.patch(
       const { name } = req.body;
       const team = await setTeamName(teamId, name);
       res.json({ name: team?.name });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/agent-instructions',
+  processRequest({
+    body: z.object({ agentInstructions: z.string().max(8192) }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        throw new Error(`User ${req.user?._id} not associated with a team`);
+      }
+      const result = await Team.updateOne(
+        { _id: teamId },
+        { $set: { agentInstructions: req.body.agentInstructions } },
+      );
+      if (result.matchedCount === 0) {
+        return res.sendStatus(404);
+      }
+      res.json({ agentInstructions: req.body.agentInstructions });
     } catch (e) {
       next(e);
     }

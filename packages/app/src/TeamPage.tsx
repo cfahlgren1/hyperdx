@@ -23,6 +23,7 @@ import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
 import McpServerSection from './components/TeamSettings/McpServerSection';
 import SecurityPoliciesSection from './components/TeamSettings/SecurityPoliciesSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
+import TeamAgentSection from './components/TeamSettings/TeamAgentSection';
 import TeamInvestigationsSection from './components/TeamSettings/TeamInvestigationsSection';
 import TeamMembersSection from './components/TeamSettings/TeamMembersSection';
 import TeamQueryConfigSection from './components/TeamSettings/TeamQueryConfigSection';
@@ -165,9 +166,19 @@ export default function TeamPage() {
           id: 'team-advanced-query-settings',
           content: <TeamQueryConfigSection />,
         },
+      ],
+    },
+    {
+      value: 'agent',
+      label: 'AI Agent',
+      sections: [
         {
-          id: 'team-advanced-investigations',
+          id: 'team-agent-investigations',
           content: <TeamInvestigationsSection />,
+        },
+        {
+          id: 'team-agent-settings',
+          content: <TeamAgentSection />,
         },
       ],
     },
