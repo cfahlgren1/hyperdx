@@ -3,8 +3,8 @@
 AI on-call agent for self-hosted ClickStack, built on [Flue](https://flue.dev).
 When an alert fires, it investigates the underlying telemetry through
 ClickStack's MCP server and posts a root-cause summary, shown in the app under
-**Alerts → Investigations**. The same read-only assistant is also available as
-a durable conversational agent over Flue's HTTP API.
+**Alerts → Investigations**. The same read-only investigator is also available
+as a durable conversational agent over Flue's HTTP API.
 
 ## Quick start
 
@@ -32,29 +32,39 @@ model with `AI_MODEL_NAME` (default `claude-sonnet-5`), or point
 
 Assumes the single-team model of self-hosted ClickStack.
 
-## Talk to the assistant
+## Talk to the investigator
 
-The assistant is exposed at `/agents/assistant/:conversationId`. Reuse a stable
-conversation ID to continue the same durable conversation; use a new ID to
-start with fresh context. Every assistant route requires the provisioned agent
-credential and uses the same server-enforced read-only ClickStack tools as
-automatic investigations.
+The investigator is exposed at `/agents/investigator/:conversationId`. Reuse a
+stable conversation ID to continue the same durable conversation; use a new ID
+to start with fresh context. Conversations are hydrated with the deployment's
+durable context — team instructions, agent memories, and a digest of recent
+investigations — and use the same server-enforced read-only ClickStack tools
+as automatic investigations.
+
+Authenticate with **your personal ClickStack API key** (Team Settings → API
+Keys); the route also accepts the installation credential for internal use.
+Personal keys are validated against the ClickStack API and must belong to the
+installation's team.
 
 ```bash
-CRED=$(curl -s -H 'x-hyperdx-agent-provision: 1' \
-  http://127.0.0.1:8001/agent/credential | jq -r .credential)
-
 curl -X POST \
-  'http://127.0.0.1:4010/agents/assistant/local-operator?wait=result' \
+  'http://127.0.0.1:4010/agents/investigator/local-operator?wait=result' \
   -H 'content-type: application/json' \
-  -H "authorization: Bearer $CRED" \
+  -H "authorization: Bearer $YOUR_API_KEY" \
   -d '{"message":"Which services produced the most errors in the last hour?"}'
 ```
 
 Omit `?wait=result` to receive stream coordinates immediately, then read the
 durable conversation from the returned `streamUrl`. `POST
-/agents/assistant/:conversationId/abort` cancels in-flight work for that
+/agents/investigator/:conversationId/abort` cancels in-flight work for that
 conversation.
+
+For an interactive terminal chat, use
+[flue-tui](https://github.com/cfahlgren1/flue-tui):
+
+```bash
+npx flue-tui investigator --server http://127.0.0.1:4010 --token $YOUR_API_KEY
+```
 
 ## Configuration
 

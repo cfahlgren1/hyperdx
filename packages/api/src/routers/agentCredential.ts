@@ -7,6 +7,7 @@ import {
 } from '@/controllers/agentInstallation';
 import { getRecentInvestigations } from '@/controllers/alertHistory';
 import { getAllTeams } from '@/controllers/team';
+import { findUserByAccessKey } from '@/controllers/user';
 import AgentMemory from '@/models/agentMemory';
 import Alert from '@/models/alert';
 import AlertHistory from '@/models/alertHistory';
@@ -51,6 +52,44 @@ export function createAgentCredentialApp() {
 
       const credential = await ensureAgentCredential(team._id.toString());
       return res.json({ credential });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Validates a credential presented to the agent's conversational route.
+  // Callers authenticate with the installation credential; the candidate in
+  // the body may be that same credential or a user's personal API access key
+  // from the installation's own team. This keeps "who may chat with the
+  // investigator" resolvable by the sidecar, which has no database access.
+  app.post('/agent/validate-credential', async (req, res, next) => {
+    try {
+      const key = req.headers.authorization?.split('Bearer ')[1];
+      if (!key) {
+        return res.sendStatus(401);
+      }
+      const installation = await findAgentInstallationByCredential(key);
+      if (!installation) {
+        return res.sendStatus(401);
+      }
+
+      const candidate = req.body?.credential;
+      if (typeof candidate !== 'string' || candidate.length === 0) {
+        return res.status(400).json({ error: 'credential: string required' });
+      }
+
+      if (candidate === key) {
+        return res.json({ kind: 'agent' });
+      }
+
+      const user = await findUserByAccessKey(candidate);
+      if (
+        user?.team == null ||
+        user.team.toString() !== installation.team.toString()
+      ) {
+        return res.sendStatus(401);
+      }
+      return res.json({ kind: 'user' });
     } catch (e) {
       next(e);
     }
