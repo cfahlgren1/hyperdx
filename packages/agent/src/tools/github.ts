@@ -192,7 +192,39 @@ const readFile = defineTool({
   },
 });
 
+const createIssue = defineTool({
+  name: 'github_create_issue',
+  description:
+    'Create a GitHub issue. Only use this when the user explicitly asks you to file an issue. Include your evidence and remediation suggestions in the body, and tell the user the issue URL.',
+  input: v.object({
+    title: v.pipe(v.string(), v.minLength(4), v.maxLength(200)),
+    body: v.pipe(v.string(), v.minLength(1), v.maxLength(20_000)),
+    labels: v.optional(v.array(v.pipe(v.string(), v.maxLength(50)))),
+    repo: repoInput,
+  }),
+  run: async ({ input }) => {
+    const repo = resolveRepo(input.repo);
+    if (!repo) {
+      return 'No repository given and GITHUB_REPO is not configured.';
+    }
+    const result = await github(`/repos/${repo}/issues`, {
+      method: 'POST',
+      body: { title: input.title, body: input.body, labels: input.labels },
+    });
+    if (!result.ok) {
+      return `GitHub issue creation failed (${result.status}).`;
+    }
+    return `Created ${(result.json as GithubIssue).html_url}`;
+  },
+});
+
 /** Read-only GitHub tools for every session; empty when GITHUB_TOKEN is unset. */
 export const githubTools = GITHUB_TOKEN
   ? [searchIssues, getIssue, searchCode, readFile]
   : [];
+
+/**
+ * Issue creation is conversation-only: automated alert investigations stay
+ * read-only, a human in the loop has to ask for an issue.
+ */
+export const githubWriteTools = GITHUB_TOKEN ? [createIssue] : [];
