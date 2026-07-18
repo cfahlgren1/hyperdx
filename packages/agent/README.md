@@ -67,9 +67,10 @@ with the deployment's durable context, which the agent can grep and read:
     └── checkout-service.md
 ```
 
-New or edited `memory/` files are checked and synced back to ClickStack after
-each run — investigations and conversations alike (capped at 10 files x 4KB,
-correctable in Settings -> AI Agent, where team instructions also live).
+Alert investigations sync new or edited `memory/` files back to ClickStack
+after each run; conversations save notes with an `update_memory` tool. Both
+are capped at 10 files x 4KB and correctable in Settings -> AI Agent, where
+team instructions also live.
 
 ## Configuration
 
