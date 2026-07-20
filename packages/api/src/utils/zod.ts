@@ -639,6 +639,24 @@ export const externalDashboardTileListSchema = z
   );
 
 // ==============================
+// Agent memories
+// ==============================
+// Shared by the human-facing CRUD router (routers/api/agentMemories.ts) and
+// the agent's sync endpoint (routers/agentCredential.ts) so the caps can't
+// drift.
+
+export const agentMemorySlugSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,59}$/);
+
+export const agentMemoryContentSchema = z.string().min(1).max(4096);
+
+export const agentMemoryEntrySchema = z.object({
+  slug: agentMemorySlugSchema,
+  content: agentMemoryContentSchema,
+});
+
+// ==============================
 // Alerts
 // ==============================
 const zChannel = z.object({

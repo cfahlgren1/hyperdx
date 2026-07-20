@@ -2137,6 +2137,14 @@ export type AlertsApiResponse = z.infer<typeof AlertsApiResponseSchema>;
 // a feed entry. Served by GET /alerts/investigations independently of the
 // rolling per-alert history window, so summaries stay reachable after the
 // chart history scrolls past them.
+export const InvestigationOutcomeSchema = z.enum([
+  'root_cause',
+  'linked',
+  'benign',
+  'inconclusive',
+]);
+export const InvestigationSeveritySchema = z.enum(['P1', 'P2', 'P3']);
+
 export const AlertInvestigationItemSchema = z.object({
   alertId: z.string(),
   alertHistoryId: z.string(),
@@ -2157,11 +2165,9 @@ export const AlertInvestigationItemSchema = z.object({
     // Whether the agent kept a run trajectory the app can fetch.
     hasTrajectory: z.boolean().optional(),
     // Structured verdict; absent on investigations from older agents.
-    outcome: z
-      .enum(['root_cause', 'linked', 'benign', 'inconclusive'])
-      .optional(),
+    outcome: InvestigationOutcomeSchema.optional(),
     confidence: z.number().optional(),
-    severity: z.enum(['P1', 'P2', 'P3']).optional(),
+    severity: InvestigationSeveritySchema.optional(),
   }),
 });
 

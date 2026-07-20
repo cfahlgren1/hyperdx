@@ -3,10 +3,9 @@ import { z } from 'zod';
 import { processRequest } from 'zod-express-middleware';
 
 import AgentMemory from '@/models/agentMemory';
+import { agentMemoryContentSchema, agentMemorySlugSchema } from '@/utils/zod';
 
 const router = express.Router();
-
-const slugSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}$/);
 
 // The agent's own writes go through the internal listener with the same caps;
 // this router is the human side of the same store (view, correct, delete).
@@ -34,8 +33,8 @@ router.get('/', async (req, res, next) => {
 router.put(
   '/:slug',
   processRequest({
-    params: z.object({ slug: slugSchema }),
-    body: z.object({ content: z.string().min(1).max(4096) }),
+    params: z.object({ slug: agentMemorySlugSchema }),
+    body: z.object({ content: agentMemoryContentSchema }),
   }),
   async (req, res, next) => {
     try {
@@ -57,7 +56,7 @@ router.put(
 
 router.delete(
   '/:slug',
-  processRequest({ params: z.object({ slug: slugSchema }) }),
+  processRequest({ params: z.object({ slug: agentMemorySlugSchema }) }),
   async (req, res, next) => {
     try {
       const teamId = req.user?.team;

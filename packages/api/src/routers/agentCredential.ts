@@ -1,5 +1,10 @@
+import {
+  InvestigationOutcomeSchema,
+  InvestigationSeveritySchema,
+} from '@hyperdx/common-utils/dist/types';
 import express from 'express';
 import mongoose from 'mongoose';
+import { z } from 'zod';
 
 import {
   ensureAgentCredential,
@@ -12,8 +17,10 @@ import AgentMemory from '@/models/agentMemory';
 import Alert from '@/models/alert';
 import AlertHistory from '@/models/alertHistory';
 import Team from '@/models/team';
+import { formatZodError } from '@/utils/enhancedErrors';
 import { setBusinessContext } from '@/utils/instrumentation';
 import logger from '@/utils/logger';
+import { agentMemoryEntrySchema } from '@/utils/zod';
 
 // Required on every provisioning request. This is not a secret — it defends
 // against SSRF: a server-side request forged through a URL-fetch feature
@@ -21,6 +28,21 @@ import logger from '@/utils/logger';
 // cannot set a custom header, so it can never reach this endpoint. See the
 // IMDSv2 design (AWS EC2 metadata) for the same pattern.
 const AGENT_PROVISION_HEADER = 'x-hyperdx-agent-provision';
+
+const memorySyncBodySchema = z.object({
+  memories: z.array(agentMemoryEntrySchema).max(10),
+});
+
+const investigationResultBodySchema = z.object({
+  alertHistoryId: z.string(),
+  alertId: z.string(),
+  summary: z.string(),
+  gist: z.string(),
+  // Verdict fields are optional: older agents omit them.
+  outcome: InvestigationOutcomeSchema.optional(),
+  confidence: z.number().min(0).max(100).optional(),
+  severity: InvestigationSeveritySchema.optional(),
+});
 
 /**
  * Serves the on-call agent's read-only MCP credential. Intentionally
@@ -141,26 +163,12 @@ export function createAgentCredentialApp() {
         return res.sendStatus(401);
       }
 
-      const { memories } = req.body ?? {};
-      if (!Array.isArray(memories) || memories.length > 10) {
-        return res.status(400).json({ error: 'memories: array of at most 10' });
-      }
-      for (const m of memories) {
-        if (
-          typeof m?.slug !== 'string' ||
-          !/^[a-z0-9][a-z0-9-]{0,59}$/.test(m.slug) ||
-          typeof m?.content !== 'string' ||
-          m.content.length === 0 ||
-          m.content.length > 4096
-        ) {
-          return res.status(400).json({
-            error:
-              'each memory needs a kebab-case slug and content <= 4096 chars',
-          });
-        }
+      const parsed = memorySyncBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: formatZodError(parsed.error) });
       }
 
-      for (const m of memories) {
+      for (const m of parsed.data.memories) {
         await AgentMemory.findOneAndUpdate(
           { team: installation.team, slug: m.slug },
           { $set: { content: m.content } },
@@ -189,6 +197,10 @@ export function createAgentCredentialApp() {
       }
       const teamId = installation.team;
 
+      const parsed = investigationResultBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: formatZodError(parsed.error) });
+      }
       const {
         alertHistoryId,
         alertId,
@@ -197,33 +209,7 @@ export function createAgentCredentialApp() {
         outcome,
         confidence,
         severity,
-      } = req.body ?? {};
-      if (
-        typeof alertHistoryId !== 'string' ||
-        typeof alertId !== 'string' ||
-        typeof summary !== 'string' ||
-        typeof gist !== 'string'
-      ) {
-        return res.status(400).json({
-          error: 'alertHistoryId, alertId, summary, and gist are required',
-        });
-      }
-      // Verdict fields are optional (older agents omit them) but must be
-      // well-formed when present.
-      const OUTCOMES = ['root_cause', 'linked', 'benign', 'inconclusive'];
-      const SEVERITIES = ['P1', 'P2', 'P3'];
-      if (
-        (outcome !== undefined && !OUTCOMES.includes(outcome)) ||
-        (severity !== undefined && !SEVERITIES.includes(severity)) ||
-        (confidence !== undefined &&
-          (typeof confidence !== 'number' ||
-            confidence < 0 ||
-            confidence > 100))
-      ) {
-        return res.status(400).json({
-          error: 'outcome, confidence, or severity is malformed',
-        });
-      }
+      } = parsed.data;
       if (
         !mongoose.isValidObjectId(alertHistoryId) ||
         !mongoose.isValidObjectId(alertId)

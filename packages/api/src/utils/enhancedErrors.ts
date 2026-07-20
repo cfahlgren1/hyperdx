@@ -6,7 +6,7 @@ import { z, ZodError } from 'zod';
  * @param error - The Zod error to format
  * @returns A single string with all validation errors
  */
-function formatZodError(error: ZodError): string {
+export function formatZodError(error: ZodError): string {
   return error.issues
     .map(issue => {
       const path = issue.path.length > 0 ? `${issue.path.join('.')}: ` : '';
