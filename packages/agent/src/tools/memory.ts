@@ -4,8 +4,6 @@ import * as v from 'valibot';
 import { agentApiUrl } from '../context.js';
 import { clickstackCredential } from '../mcp.js';
 
-// Conversations persist durable notes through this tool. Investigations sync
-// memory/ file edits in-band after the run instead.
 export const updateMemory = defineTool({
   name: 'update_memory',
   description:
